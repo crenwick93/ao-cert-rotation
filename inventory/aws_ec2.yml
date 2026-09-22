@@ -1,0 +1,19 @@
+---
+plugin: amazon.aws.aws_ec2
+
+regions:
+  - eu-west-1
+
+filters:
+  tag:Name: ao-demo
+  instance-state-name: running
+
+keyed_groups:
+  - key: tags.Name
+    prefix: tag
+    separator: "_"
+
+compose:
+  ansible_host: public_ip_address
+  ansible_user: "'ec2-user'"
+  ansible_ssh_common_args: "'-o StrictHostKeyChecking=no'"

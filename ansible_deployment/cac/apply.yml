@@ -52,6 +52,10 @@
     vault_addr: "http://{{ lookup('env', 'DEMO_HOST_IP') | default('127.0.0.1', true) }}:8200"
     vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('demo-root-token', true) }}"
 
+    # AWS credentials (for EC2 dynamic inventory in AAP)
+    aws_access_key_id: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') | default('placeholder', true) }}"
+    aws_secret_access_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') | default('placeholder', true) }}"
+
   vars_files:
     - vars.yml
   roles:

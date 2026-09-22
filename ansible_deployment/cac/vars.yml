@@ -147,13 +147,37 @@ controller_credentials:
       vault_addr: "{{ vault_addr }}"
       vault_token: "{{ vault_token }}"
 
+  - name: "AWS"
+    description: "AWS credentials for EC2 dynamic inventory"
+    organization: "Default"
+    credential_type: "Amazon Web Services"
+    inputs:
+      username: "{{ aws_access_key_id }}"
+      password: "{{ aws_secret_access_key }}"
+
 # -----------------------------------------------------------------------------
 # Inventories
 # -----------------------------------------------------------------------------
 controller_inventories:
-  - name: "Demo Inventory"
-    description: "Inventory for cert rotation demo hosts"
+  - name: "Cert Demo Inventory"
+    description: "AWS EC2 dynamic inventory for cert rotation demo hosts"
     organization: "Default"
+
+# -----------------------------------------------------------------------------
+# Inventory Sources (AWS EC2 dynamic discovery)
+# -----------------------------------------------------------------------------
+controller_inventory_sources:
+  - name: "AWS EC2 - Cert Demo"
+    description: "Discovers demo VM by tag:Name=ao-demo in eu-west-1"
+    organization: "Default"
+    inventory: "Cert Demo Inventory"
+    source: scm
+    source_project: "Cert Rotation Demo"
+    source_path: "inventory/aws_ec2.yml"
+    credential: "AWS"
+    overwrite: true
+    update_on_launch: true
+    update_cache_timeout: 60
 
 # -----------------------------------------------------------------------------
 # Projects
@@ -180,7 +204,7 @@ controller_templates:
     job_type: "run"
     project: "Cert Rotation Demo"
     playbook: "playbooks/trigger_ao_workflow.yml"
-    inventory: "Demo Inventory"
+    inventory: "Cert Demo Inventory"
     ask_variables_on_launch: true
     credentials:
       - "AO Webhook"
@@ -193,7 +217,7 @@ controller_templates:
     job_type: "run"
     project: "Cert Rotation Demo"
     playbook: "playbooks/manage_snow_incident.yml"
-    inventory: "Demo Inventory"
+    inventory: "Cert Demo Inventory"
     ask_variables_on_launch: true
     credentials:
       - "ServiceNow ITSM"
@@ -206,7 +230,7 @@ controller_templates:
     job_type: "run"
     project: "Cert Rotation Demo"
     playbook: "playbooks/manage_snow_change_request.yml"
-    inventory: "Demo Inventory"
+    inventory: "Cert Demo Inventory"
     ask_variables_on_launch: true
     credentials:
       - "ServiceNow ITSM"
@@ -219,7 +243,7 @@ controller_templates:
     job_type: "run"
     project: "Cert Rotation Demo"
     playbook: "playbooks/bridge_ao_approval.yml"
-    inventory: "Demo Inventory"
+    inventory: "Cert Demo Inventory"
     ask_variables_on_launch: true
     credentials:
       - "AO API"
@@ -233,7 +257,7 @@ controller_templates:
     job_type: "run"
     project: "Cert Rotation Demo"
     playbook: "playbooks/renew_certificate.yml"
-    inventory: "Demo Inventory"
+    inventory: "Cert Demo Inventory"
     ask_variables_on_launch: true
     credentials:
       - "Demo SSH"
@@ -248,7 +272,7 @@ controller_templates:
     job_type: "run"
     project: "Cert Rotation Demo"
     playbook: "playbooks/renew_keystore_certificate.yml"
-    inventory: "Demo Inventory"
+    inventory: "Cert Demo Inventory"
     ask_variables_on_launch: true
     credentials:
       - "Demo SSH"
@@ -262,7 +286,7 @@ controller_templates:
     job_type: "run"
     project: "Cert Rotation Demo"
     playbook: "playbooks/validate_certificate.yml"
-    inventory: "Demo Inventory"
+    inventory: "Cert Demo Inventory"
     ask_variables_on_launch: true
     credentials:
       - "Demo SSH"
