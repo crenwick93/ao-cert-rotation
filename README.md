@@ -18,7 +18,7 @@ Two certificates expire on production services at the same time. A cron-based mo
 ## Workflow
 
 ```mermaid
-flowchart LR
+flowchart TD
   A[Splunk Cert Alert] --> B[Create SNOW Incident]
   B --> C[AI: Plan Renewal]
   C --> D[Update Incident]
