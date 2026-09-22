@@ -37,8 +37,10 @@
     ao_base_url: "{{ lookup('env', 'AO_WEBHOOK_BASE_URL') | default(omit, true) }}"
 
     # Demo host SSH key (EC2 instance provisioned by Terraform)
-    demo_ssh_key: "{{ lookup('file', demo_ssh_key_path, errors='ignore') | default(omit, true) }}"
-    demo_ssh_key_path: "{{ lookup('env', 'DEMO_SSH_KEY_PATH') | default(playbook_dir + '/../../setup/terraform/demo-key.pem', true) }}"
+    # Use absolute path to avoid playbook_dir resolution issues
+    _repo_root: "{{ playbook_dir + '/../..' }}"
+    demo_ssh_key_path: "{{ lookup('env', 'DEMO_SSH_KEY_PATH') | default(_repo_root + '/setup/terraform/demo-key.pem', true) }}"
+    demo_ssh_key: "{{ lookup('file', demo_ssh_key_path) }}"
 
     # GitHub (for AAP project SCM URL)
     github_repo: "{{ lookup('env', 'GITHUB_REPO') | default('YOUR_ORG/ao-cert-rotation', true) }}"
