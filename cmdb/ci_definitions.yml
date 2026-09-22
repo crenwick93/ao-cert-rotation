@@ -1,0 +1,135 @@
+---
+# CI definitions for the cert rotation demo CMDB graph.
+#
+# Defines a citizen-facing digital service, its component CIs, and typed
+# relationships. setup_cmdb.py reads this and creates everything in
+# ServiceNow via the Table API.
+#
+# The two cert-bearing services (citizen-portal-web and citizen-portal-api)
+# are the ones that trigger the cert rotation workflow. The downstream
+# services show blast radius — what breaks if a cert renewal fails.
+
+business_service:
+  name: "Citizen Digital Service"
+  ci_class: cmdb_ci_service
+  description: "[cert-demo] Citizen-facing digital service — web portal and API backend"
+  attributes:
+    operational_status: "1"       # Operational
+    environment: demo
+    owned_by_group: "Digital Services"
+
+components:
+  # ── Cert-bearing services (these trigger the workflow) ────────
+  - name: citizen-portal-web
+    ci_class: cmdb_ci_appl
+    description: "[cert-demo] nginx web frontend — PEM certificate on :443"
+    attributes:
+      ip_address: ""              # populated from DEMO_HOST_IP at setup time
+      environment: demo
+      owned_by_group: "Platform Services"
+      version: "1.26.2"
+      short_description: "nginx — PEM cert — port 443"
+
+  - name: citizen-portal-api
+    ci_class: cmdb_ci_appl
+    description: "[cert-demo] Tomcat API server — Java keystore certificate on :8443"
+    attributes:
+      ip_address: ""
+      environment: demo
+      owned_by_group: "Application Services"
+      version: "10.1.20"
+      short_description: "Tomcat — Java keystore — port 8443"
+
+  # ── Downstream dependencies (show blast radius) ───────────────
+  - name: identity-verification-api
+    ci_class: cmdb_ci_appl
+    description: "[cert-demo] Identity verification service — depends on API server"
+    attributes:
+      environment: demo
+      owned_by_group: "Identity Services"
+      version: "3.1.0"
+      short_description: "Verifies citizen identity documents"
+
+  - name: document-upload-service
+    ci_class: cmdb_ci_appl
+    description: "[cert-demo] Document upload service — depends on web frontend"
+    attributes:
+      environment: demo
+      owned_by_group: "Application Services"
+      version: "2.4.1"
+      short_description: "Handles citizen document uploads"
+
+  - name: notification-gateway
+    ci_class: cmdb_ci_appl
+    description: "[cert-demo] Notification gateway — email and SMS alerts to citizens"
+    attributes:
+      environment: demo
+      owned_by_group: "Platform Services"
+      version: "1.8.0"
+      short_description: "Sends email/SMS notifications to citizens"
+
+  # ── Certificate authority ─────────────────────────────────────
+  - name: vault-pki
+    ci_class: cmdb_ci_appl
+    description: "[cert-demo] HashiCorp Vault PKI — internal certificate authority"
+    attributes:
+      ip_address: ""
+      environment: demo
+      owned_by_group: "Security Operations"
+      version: "1.17.0"
+      short_description: "PKI secrets engine — issues TLS certificates"
+
+# Typed relationships following ServiceNow CMDB conventions.
+# "parent" and "child" reference component names above, or
+# "business_service" for the top-level service.
+relationships:
+  # Business service contains all components
+  - parent: business_service
+    child: citizen-portal-web
+    type: "Contains::Used by"
+
+  - parent: business_service
+    child: citizen-portal-api
+    type: "Contains::Used by"
+
+  - parent: business_service
+    child: identity-verification-api
+    type: "Contains::Used by"
+
+  - parent: business_service
+    child: document-upload-service
+    type: "Contains::Used by"
+
+  - parent: business_service
+    child: notification-gateway
+    type: "Contains::Used by"
+
+  - parent: business_service
+    child: vault-pki
+    type: "Contains::Used by"
+
+  # Downstream services depend on the cert-bearing services
+  - parent: identity-verification-api
+    child: citizen-portal-api
+    type: "Depends on::Used by"
+
+  - parent: document-upload-service
+    child: citizen-portal-web
+    type: "Depends on::Used by"
+
+  - parent: notification-gateway
+    child: citizen-portal-web
+    type: "Depends on::Used by"
+
+  - parent: notification-gateway
+    child: citizen-portal-api
+    type: "Depends on::Used by"
+
+  # Cert-bearing services use the Vault CA
+  - parent: citizen-portal-web
+    child: vault-pki
+    type: "Uses::Used by"
+
+  - parent: citizen-portal-api
+    child: vault-pki
+    type: "Uses::Used by"
