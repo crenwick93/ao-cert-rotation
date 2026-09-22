@@ -18,3 +18,8 @@ setup/terraform/*.tfplan
 
 # Generated Ansible inventory (contains IPs / key paths)
 setup/playbooks/inventory/hosts.yml
+
+# Vault / cert artifacts
+vault-ca.pem
+*.jks
+*.p12

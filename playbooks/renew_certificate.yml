@@ -1,0 +1,105 @@
+---
+# Renew a PEM certificate from Vault CA and install it for nginx.
+#
+# Requests a new certificate from Vault's PKI engine, installs the cert
+# and key for nginx, and reloads the service. Publishes renewal status
+# and new expiry via set_stats for downstream AO workflow nodes.
+#
+# Usage from AO workflow extra_vars:
+#   { "cert_domain": "certdemo.demoredhat.com", "cert_host": "demo-vm" }
+#
+# Vault credentials (vault_addr, vault_token) are injected by the
+# "Vault Credential" credential type as environment variables.
+
+- name: Renew PEM Certificate (nginx)
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    cert_domain: "{{ lookup('env', 'CERT_DOMAIN') | default('certdemo.demoredhat.com', true) }}"
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('http://127.0.0.1:8200', true) }}"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('demo-root-token', true) }}"
+    vault_pki_role: "cert-demo"
+    cert_ttl: "2160h"
+    cert_path: /etc/pki/tls/certs/server.crt
+    key_path: /etc/pki/tls/private/server.key
+    ca_path: /etc/pki/tls/certs/ca.crt
+
+  tasks:
+    - name: Request new certificate from Vault
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki/issue/{{ vault_pki_role }}"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          common_name: "{{ cert_domain }}"
+          ttl: "{{ cert_ttl }}"
+          ip_sans: "{{ ansible_default_ipv4.address }},127.0.0.1"
+        return_content: true
+        status_code: [200]
+      register: cert_result
+      delegate_to: "{{ inventory_hostname }}"
+
+    - name: Install new certificate
+      ansible.builtin.copy:
+        content: "{{ cert_result.json.data.certificate }}"
+        dest: "{{ cert_path }}"
+        mode: "0644"
+        backup: true
+
+    - name: Install new private key
+      ansible.builtin.copy:
+        content: "{{ cert_result.json.data.private_key }}"
+        dest: "{{ key_path }}"
+        mode: "0600"
+        backup: true
+
+    - name: Install CA certificate
+      ansible.builtin.copy:
+        content: "{{ cert_result.json.data.issuing_ca }}"
+        dest: "{{ ca_path }}"
+        mode: "0644"
+
+    - name: Reload nginx to pick up new certificate
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+
+    - name: Verify new certificate is served
+      ansible.builtin.command:
+        cmd: >
+          openssl s_client -connect {{ cert_domain }}:443
+          -servername {{ cert_domain }}
+      register: verify_result
+      changed_when: false
+      failed_when: false
+
+    - name: Extract new expiry date
+      ansible.builtin.shell:
+        cmd: >
+          echo | openssl s_client -connect localhost:443 -servername {{ cert_domain }} 2>/dev/null
+          | openssl x509 -noout -enddate | cut -d= -f2
+      register: new_expiry
+      changed_when: false
+
+    - name: Display renewal result
+      ansible.builtin.debug:
+        msg: |
+          === PEM Certificate Renewed ===
+          Domain: {{ cert_domain }}
+          Service: nginx (:443)
+          New Expiry: {{ new_expiry.stdout }}
+          Cert Path: {{ cert_path }}
+
+    - name: Publish renewal artifacts
+      ansible.builtin.set_stats:
+        data:
+          renewal_status: "success"
+          renewal_service: "nginx"
+          renewal_cert_type: "pem"
+          new_expiry: "{{ new_expiry.stdout }}"
+          cert_domain: "{{ cert_domain }}"
+        aggregate: false

@@ -1,0 +1,284 @@
+---
+# Provision the demo VM with nginx and HashiCorp Vault.
+#
+# Installs nginx with SSL, runs Vault in dev mode as a podman container,
+# configures a PKI secrets engine, and generates initial valid certificates.
+#
+# Usage:
+#   ansible-playbook -i setup/playbooks/inventory/hosts.yml setup/playbooks/provision_vm.yml
+
+- name: Provision Demo VM — nginx + Vault
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    cert_domain: "{{ lookup('env', 'CERT_DOMAIN') | default('certdemo.demoredhat.com', true) }}"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('demo-root-token', true) }}"
+    vault_addr: "http://127.0.0.1:8200"
+    cert_ttl: "2160h"
+
+  tasks:
+    # ── Install packages ────────────────────────────────────────
+    - name: Install required packages
+      ansible.builtin.dnf:
+        name:
+          - nginx
+          - podman
+          - openssl
+          - jq
+          - cronie
+        state: present
+
+    - name: Enable and start podman socket
+      ansible.builtin.systemd:
+        name: podman.socket
+        state: started
+        enabled: true
+
+    # ── HashiCorp Vault (dev mode) ──────────────────────────────
+    - name: Remove existing Vault container if present
+      containers.podman.podman_container:
+        name: vault
+        state: absent
+      ignore_errors: true
+
+    - name: Start Vault in dev mode
+      containers.podman.podman_container:
+        name: vault
+        image: docker.io/hashicorp/vault:latest
+        state: started
+        restart_policy: always
+        ports:
+          - "8200:8200"
+        env:
+          VAULT_DEV_ROOT_TOKEN_ID: "{{ vault_token }}"
+          VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+        cap_add:
+          - IPC_LOCK
+
+    - name: Wait for Vault to be ready
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/health"
+        method: GET
+        status_code: 200
+      register: vault_health
+      retries: 30
+      delay: 2
+      until: vault_health.status == 200
+
+    # ── Configure Vault PKI ─────────────────────────────────────
+    - name: Enable PKI secrets engine
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/mounts/pki"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          type: pki
+          config:
+            max_lease_ttl: "87600h"
+        status_code: [200, 204]
+      register: pki_mount
+      failed_when: pki_mount.status not in [200, 204] and 'existing mount' not in (pki_mount.content | default(''))
+
+    - name: Generate root CA certificate
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki/root/generate/internal"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          common_name: "Demo Certificate Authority"
+          ttl: "87600h"
+          issuer_name: "demo-ca"
+        return_content: true
+        status_code: [200]
+      register: ca_result
+
+    - name: Save CA certificate to file
+      ansible.builtin.copy:
+        content: "{{ ca_result.json.data.certificate }}"
+        dest: /etc/pki/tls/certs/vault-ca.pem
+        mode: "0644"
+
+    - name: Configure PKI URLs
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki/config/urls"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          issuing_certificates: "{{ vault_addr }}/v1/pki/ca"
+          crl_distribution_points: "{{ vault_addr }}/v1/pki/crl"
+        status_code: [200, 204]
+
+    - name: Create PKI role for cert issuance
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki/roles/cert-demo"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          allowed_domains:
+            - "{{ cert_domain }}"
+            - "localhost"
+          allow_subdomains: true
+          allow_bare_domains: true
+          allow_ip_sans: true
+          max_ttl: "8760h"
+          key_type: "rsa"
+          key_bits: 2048
+        status_code: [200, 204]
+
+    # ── Issue initial certificate ───────────────────────────────
+    - name: Issue initial certificate from Vault
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki/issue/cert-demo"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          common_name: "{{ cert_domain }}"
+          ttl: "{{ cert_ttl }}"
+          ip_sans: "{{ ansible_default_ipv4.address }},127.0.0.1"
+        return_content: true
+        status_code: [200]
+      register: cert_result
+
+    - name: Create TLS directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/pki/tls/certs
+        - /etc/pki/tls/private
+
+    - name: Install server certificate
+      ansible.builtin.copy:
+        content: "{{ cert_result.json.data.certificate }}"
+        dest: /etc/pki/tls/certs/server.crt
+        mode: "0644"
+
+    - name: Install server private key
+      ansible.builtin.copy:
+        content: "{{ cert_result.json.data.private_key }}"
+        dest: /etc/pki/tls/private/server.key
+        mode: "0600"
+
+    - name: Install CA certificate for chain
+      ansible.builtin.copy:
+        content: "{{ cert_result.json.data.issuing_ca }}"
+        dest: /etc/pki/tls/certs/ca.crt
+        mode: "0644"
+
+    # ── Configure nginx SSL ─────────────────────────────────────
+    - name: Configure nginx for SSL
+      ansible.builtin.copy:
+        content: |
+          server {
+              listen 80 default_server;
+              server_name {{ cert_domain }} _;
+              return 301 https://$host$request_uri;
+          }
+
+          server {
+              listen 443 ssl default_server;
+              server_name {{ cert_domain }} _;
+
+              ssl_certificate     /etc/pki/tls/certs/server.crt;
+              ssl_certificate_key /etc/pki/tls/private/server.key;
+              ssl_trusted_certificate /etc/pki/tls/certs/ca.crt;
+
+              ssl_protocols TLSv1.2 TLSv1.3;
+              ssl_prefer_server_ciphers on;
+
+              location / {
+                  root /usr/share/nginx/html;
+                  index index.html;
+              }
+
+              location /health {
+                  return 200 'OK';
+                  add_header Content-Type text/plain;
+              }
+          }
+        dest: /etc/nginx/conf.d/ssl.conf
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Remove default nginx server block
+      ansible.builtin.file:
+        path: /etc/nginx/conf.d/default.conf
+        state: absent
+      notify: Reload nginx
+
+    - name: Create index page
+      ansible.builtin.copy:
+        content: |
+          <html>
+          <head><title>Cert Rotation Demo — nginx</title></head>
+          <body>
+            <h1>Cert Rotation Demo</h1>
+            <p>Service: <strong>nginx</strong> (PEM certificate)</p>
+            <p>Host: {{ ansible_hostname }}</p>
+            <p>Domain: {{ cert_domain }}</p>
+          </body>
+          </html>
+        dest: /usr/share/nginx/html/index.html
+        mode: "0644"
+
+    - name: Start and enable nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: started
+        enabled: true
+
+    # ── Open firewall ───────────────────────────────────────────
+    - name: Open firewall ports
+      ansible.posix.firewalld:
+        port: "{{ item }}"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop:
+        - 80/tcp
+        - 443/tcp
+        - 8200/tcp
+        - 8443/tcp
+        - 8000/tcp
+        - 8088/tcp
+        - 8089/tcp
+      ignore_errors: true
+
+    # ── Auto-update .env with CERT_DOMAIN (if it resolves to this host) ──
+    - name: Write CERT_DOMAIN back to local .env
+      ansible.builtin.lineinfile:
+        path: "{{ playbook_dir }}/../../.env"
+        regexp: '^CERT_DOMAIN='
+        line: "CERT_DOMAIN={{ cert_domain }}"
+      delegate_to: localhost
+      become: false
+
+    - name: Display provision summary
+      ansible.builtin.debug:
+        msg: |
+          === Demo VM Provisioned ===
+          Hostname: {{ ansible_hostname }}
+          IP: {{ ansible_default_ipv4.address }}
+          nginx: https://{{ cert_domain }}:443
+          Vault: http://{{ ansible_default_ipv4.address }}:8200
+          Vault Token: {{ vault_token }}
+          CA Cert: /etc/pki/tls/certs/vault-ca.pem
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded

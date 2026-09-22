@@ -1,0 +1,104 @@
+---
+# Validate a TLS certificate after renewal.
+#
+# Runs an OpenSSL TLS handshake check against the specified host:port,
+# extracts subject, issuer, expiry, and days remaining. Reports the
+# result and publishes via set_stats for downstream AO workflow nodes.
+#
+# Usage from AO workflow extra_vars:
+#   { "cert_domain": "certdemo.demoredhat.com", "validation_port": "443" }
+#   { "cert_domain": "certdemo.demoredhat.com", "validation_port": "8443" }
+
+- name: Validate Certificate Renewal
+  hosts: all
+  become: false
+  gather_facts: true
+
+  vars:
+    cert_domain: "{{ lookup('env', 'CERT_DOMAIN') | default('certdemo.demoredhat.com', true) }}"
+    validation_port: "443"
+
+  tasks:
+    - name: Perform TLS handshake check
+      ansible.builtin.shell:
+        cmd: >
+          echo | openssl s_client -connect {{ cert_domain }}:{{ validation_port }}
+          -servername {{ cert_domain }} 2>/dev/null
+      register: tls_handshake
+      changed_when: false
+      failed_when: tls_handshake.rc != 0
+
+    - name: Extract certificate subject
+      ansible.builtin.shell:
+        cmd: >
+          echo | openssl s_client -connect {{ cert_domain }}:{{ validation_port }}
+          -servername {{ cert_domain }} 2>/dev/null
+          | openssl x509 -noout -subject | sed 's/subject=//'
+      register: cert_subject
+      changed_when: false
+
+    - name: Extract certificate issuer
+      ansible.builtin.shell:
+        cmd: >
+          echo | openssl s_client -connect {{ cert_domain }}:{{ validation_port }}
+          -servername {{ cert_domain }} 2>/dev/null
+          | openssl x509 -noout -issuer | sed 's/issuer=//'
+      register: cert_issuer
+      changed_when: false
+
+    - name: Extract certificate expiry date
+      ansible.builtin.shell:
+        cmd: >
+          echo | openssl s_client -connect {{ cert_domain }}:{{ validation_port }}
+          -servername {{ cert_domain }} 2>/dev/null
+          | openssl x509 -noout -enddate | cut -d= -f2
+      register: cert_expiry
+      changed_when: false
+
+    - name: Calculate days remaining
+      ansible.builtin.shell:
+        cmd: >
+          EXPIRY=$(echo | openssl s_client -connect {{ cert_domain }}:{{ validation_port }}
+          -servername {{ cert_domain }} 2>/dev/null
+          | openssl x509 -noout -enddate | cut -d= -f2);
+          EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s);
+          NOW_EPOCH=$(date +%s);
+          echo $(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+      register: days_remaining
+      changed_when: false
+
+    - name: Determine validation result
+      ansible.builtin.set_fact:
+        validation_passed: "{{ (days_remaining.stdout | int) > 7 }}"
+
+    - name: Display validation report
+      ansible.builtin.debug:
+        msg: |
+          === Certificate Validation Report ===
+          Domain: {{ cert_domain }}
+          Port: {{ validation_port }}
+          Subject: {{ cert_subject.stdout }}
+          Issuer: {{ cert_issuer.stdout }}
+          Expiry: {{ cert_expiry.stdout }}
+          Days Remaining: {{ days_remaining.stdout }}
+          Status: {{ 'PASS — certificate is valid' if validation_passed else 'FAIL — certificate is still near expiry' }}
+
+    - name: Fail if certificate is still near expiry
+      ansible.builtin.assert:
+        that:
+          - validation_passed | bool
+        fail_msg: >
+          Certificate validation failed: {{ days_remaining.stdout }} days remaining
+          (expected > 7 after renewal)
+        success_msg: "Certificate renewed successfully with {{ days_remaining.stdout }} days remaining"
+
+    - name: Publish validation artifacts
+      ansible.builtin.set_stats:
+        data:
+          validation_result: "{{ 'pass' if validation_passed else 'fail' }}"
+          cert_subject: "{{ cert_subject.stdout }}"
+          cert_issuer: "{{ cert_issuer.stdout }}"
+          cert_expiry: "{{ cert_expiry.stdout }}"
+          cert_days_remaining: "{{ days_remaining.stdout }}"
+          validation_port: "{{ validation_port }}"
+        aggregate: false

@@ -1,115 +1,88 @@
-# AO Baseline Template — Project Rules
+# Intelligent Cert Rotation — Project Rules
 
 ## What This Project Is
 
-A reusable starter template for AO (Automation Orchestrator) projects. It is a baseline, not a finished use case.
+An AO (Automation Orchestrator) demo for intelligent certificate rotation. Splunk detects near-expiry certs, ServiceNow tracks the incident/CR lifecycle, an AI agent picks the correct renewal strategy (PEM vs Java keystore), an operator approves via SNOW, and AAP renews and validates TLS automatically.
 
-## Starting a New Project
+## Workflow Overview
 
-The user should create their own empty GitHub repo and point `origin` at it (`git remote set-url origin`) before any commits. If `origin` still points at `crenwick93/ao-baseline`, stop and tell them to retarget it. Do not push to the template repo.
+Splunk Cert Alert → Create SNOW Incident → AI Plan Renewal → Update Incident → Create CR → Authorize CR → Approval Gate (EDA bridges from SNOW) → Route by Cert Type → Run Renewal Job → Validate → Resolve Incident + Close CR
 
-When the user describes a use case, turn this baseline into that project before suggesting any deploy steps.
-
-1. Adapt the AO workflow JSON, EDA rulebook, CaC names, and playbooks to the use case. Keep the reusable playbooks (`trigger_ao_workflow.yml`, `manage_snow_incident.yml`, `manage_snow_change_request.yml`, `bridge_ao_approval.yml`, `manage_git_repo.yml`) and call them with the right `action` and extra_vars. Set `GITHUB_REPO` in `.env` to the user's repo (`org/name`) so CaC and `manage_git_repo.yml` target it.
-2. Rewrite `README.md` so it describes the new project and how to deploy it. Remove the "this is a baseline" framing.
-3. Rewrite this file so it describes the new project. Replace "What This Project Is" and "Starting a New Project" with the use case. Keep the technical gotchas below, updated for anything the new project changes.
-4. Do not tell the user to provision EC2 or run CaC until the project matches what they asked for.
-
-## Capabilities — What This Template Can Do
-
-This template provides reusable playbooks for AO workflows. Action-based playbooks take an `action` variable; single-purpose playbooks do one thing:
+## Capabilities
 
 | Playbook | Job Template | Actions | What It Does |
 |---|---|---|---|
-| `trigger_ao_workflow.yml` | AO Workflow Bridge | n/a (single purpose) | EDA-to-AO bridge — triggers AO workflows from EDA |
+| `renew_certificate.yml` | Renew Certificate | n/a (single purpose) | PEM cert renewal via Vault CA, install for nginx, reload |
+| `renew_keystore_certificate.yml` | Renew Keystore Certificate | n/a (single purpose) | Java keystore renewal via Vault, restart Tomcat |
+| `validate_certificate.yml` | Validate Cert Renewal | n/a (single purpose) | OpenSSL TLS handshake check, report cert details |
 | `manage_snow_incident.yml` | Manage SNOW Incident | `create`, `update`, `resolve` | Full incident lifecycle in ServiceNow |
 | `manage_snow_change_request.yml` | Manage SNOW Change Request | `create`, `authorize`, `update`, `review`, `close` | Full CR lifecycle in ServiceNow |
 | `bridge_ao_approval.yml` | Bridge AO Approval | n/a (single purpose) | Bridges SNOW CR approval to AO approval gate |
+| `trigger_ao_workflow.yml` | AO Workflow Bridge | n/a (single purpose) | EDA-to-AO bridge for webhook triggers |
 | `manage_git_repo.yml` | Manage Git Repo | `commit_file`, `create_pr` | Commit files and raise PRs via GitHub API |
-
-All action-based playbooks follow the same pattern: pass `action` + parameters as extra_vars.
 
 ## Key Technical Decisions
 
+### Certificate Infrastructure
+- **Vault PKI** runs in dev mode on the demo VM (token: `demo-root-token`). The PKI role is `cert-demo` under the `pki` mount.
+- **nginx** uses PEM files at `/etc/pki/tls/certs/server.crt` and `/etc/pki/tls/private/server.key`. Reload with `systemctl reload nginx`.
+- **Tomcat** uses a Java keystore at `/opt/tomcat/conf/keystore.jks` (password: `changeit`). Restart with `systemctl restart tomcat`. Keystore is rebuilt from PKCS12 → JKS on each renewal.
+- **Cert TTL**: normal certs = `2160h` (90 days), near-expiry demo reset = `120h` (5 days)
+
+### Monitoring Chain
+- **Cron script** (`check_cert.sh`) runs every minute, uses `openssl s_client` to probe `:443` and `:8443`
+- **Push script** (`push_cert_to_splunk.sh`) sends JSON events to Splunk HEC
+- **Splunk saved search** fires every 4 minutes when `days_remaining <= 7`, sends webhook to AO
+- Splunk is a log aggregator/alerter, NOT a monitoring tool — the cron script does the actual monitoring
+
 ### Environment Variables
-- ServiceNow vars support both `SERVICENOW_*` and `SN_*` naming (`apply.yml` has fallback lookups)
-- `DEMO_HOST_IP` is the generic placeholder for the demo EC2 host IP
-- AO webhook credentials (`AO_WEBHOOK_PATH`, `AO_WEBHOOK_CLIENT_ID`, `AO_WEBHOOK_CLIENT_SECRET`) come from AO after publishing the workflow
-- AO API service account (`AO_SA_CLIENT_ID`, `AO_SA_CLIENT_SECRET`) are for the approval bridge — separate from webhook creds
+- `CERT_DOMAIN` is the hostname for demo certs (must resolve to VM IP)
+- `VAULT_TOKEN` is the Vault dev-mode root token
+- `SPLUNK_PASSWORD` and `SPLUNK_HEC_TOKEN` are for Splunk container setup
+- ServiceNow vars support both `SERVICENOW_*` and `SN_*` naming
+- AO webhook credentials come from AO after publishing the workflow
+- AO API service account credentials are for the approval bridge (separate from webhook creds)
 
 ### ServiceNow PDI Gotchas
-- `close_code` must be `"Solution provided"` (not `"Solved (Permanently)"` — confirmed via API on Washington DC PDI)
-- Resolving an incident is a two-step operation: add work notes first, then resolve (single call gets rejected)
-- Work notes must be wrapped in `[code]...[/code]` tags for proper HTML rendering in SNOW
-- AI output should use HTML formatting (`<h3>`, `<p>`, `<ul>`, `<code>`, `<pre style="white-space: pre-wrap;">`)
+- `close_code` must be `"Solution provided"` (not `"Solved (Permanently)"`)
+- Resolving an incident is a two-step operation: add work notes first, then resolve
+- Work notes must be wrapped in `[code]...[/code]` tags for proper HTML rendering
+- AI output uses HTML formatting (`<h3>`, `<p>`, `<ul>`, `<code>`)
 
 ### AO Workflow JSON Format
 - Uses `schema_version: "2.0.0"`, `triggers` array, `edges` array, `${var}` syntax
 - Node types: `aap_job_template`, `agentic`, `switch`, `approval`
 - AAP job nodes use `parameters.job_template_name` and `parameters.extra_vars`
-- Agentic nodes use `parameters.prompt` and `parameters.model`
-- AI output is at `${node.result.content.field}` when using response schema, or `${node.result.content}` for raw text
+- Agentic nodes use `parameters.prompt`, `parameters.model`, and `parameters.response_schema`
+- AI output accessed at `${node.result.content.field}` when using response schema
 - Switch conditions: `${node.result.content.field} == 'value'`
-- Approval nodes use `from_port: "approved"` on outgoing edges
+- Approval nodes use `from_port: "approved"` / `from_port: "rejected"` on outgoing edges
 
 ### EDA Gotchas
-- EDA activations must NOT have event streams attached if using `servicenow.itsm.records` source from the rulebook
+- EDA activations must NOT have event streams attached if using `servicenow.itsm.records` source
 - The EDA controller credential needs host URL with `/api/controller/` path suffix (AAP 2.5+)
-- The `webhook_path` is passed from EDA activation extra_vars → rulebook → bridge job → AO trigger
-- EDA activation can't be updated by CaC while running — disable/re-enable in AAP UI
 - CR approval bridge: `event.state == '-1'` is the Implement state in ServiceNow
+- Splunk webhook goes directly to AO — EDA only handles the CR approval bridge
 
 ### CaC Gotchas
-- CaC cannot overwrite encrypted credential fields that already exist — delete the credential first or edit in AAP UI
-- The controller project must be synced in AAP before CaC can create job templates referencing its playbooks
-- The EDA project must also be synced separately for rulebook activations
-- Two-pass CaC: first run creates objects with placeholder creds, second run (after AO publish) updates with real creds
-- Uses `set -a; source .env; set +a` pattern for loading env vars (not `export $(grep | xargs)`)
-
-### Action-Based Playbook Pattern
-- `manage_snow_incident.yml` — `action: create|update|resolve`
-- `manage_snow_change_request.yml` — `action: create|authorize|update|review|close`
-- `manage_git_repo.yml` — `action: commit_file|create_pr`
-- AO workflow nodes call the same job template with different `action` values in extra_vars
-- The `create`/`commit_file`/`create_pr` actions publish identifiers via `set_stats` — subsequent nodes reference them as `${node.artifacts.field}`
-
-### GitHub Integration
-- Uses GitHub REST API (Contents API for commits, Pulls API for PRs)
-- `GITHUB_TOKEN` is injected as env var by the "GitHub API Token" credential type
-- `GITHUB_REPO` is set in `.env` and read by playbooks via `lookup('env', ...)`
-- `commit_file` action: creates or updates a file, supports branching (auto-creates branch if needed)
-- `create_pr` action: opens a PR from `head_branch` to `base_branch` (default: main)
-- Publishes `commit_sha`/`file_url` or `pr_number`/`pr_url` via `set_stats`
-- File content is base64-encoded automatically — pass raw content in `file_content`
+- CaC cannot overwrite encrypted credential fields — delete the credential first or edit in AAP UI
+- The controller project must be synced before CaC can create job templates
+- Two-pass CaC: first run creates objects with placeholders, second run (after AO publish) updates real creds
+- Uses `set -a; source .env; set +a` pattern for loading env vars
 
 ### Infrastructure
 - Terraform provisions EC2 + VPC + Elastic IP in eu-west-1
-- SSH key is generated by Terraform at `setup/terraform/demo-key.pem`
-- Ansible inventory is auto-generated at `setup/playbooks/inventory/hosts.yml`
-
-### Container Images
-- DE and EE build definitions live in `dependencies/de/` and `dependencies/ee/`
-- `dependencies/build-images.sh` builds both with `ansible-builder` and optionally pushes
-- The DE image tag is configured via `DE_IMAGE` env var — CaC reads it in `apply.yml`
-- Base images require `podman login registry.redhat.io`
-
-## Scripts
-- `./dependencies/build-images.sh` — builds DE + EE container images
-- `./setup/scripts/setup-apply.sh` — configures demo host
-- `./setup/scripts/teardown.sh` — destroys Terraform infrastructure
-- `./ansible_deployment/scripts/cac-apply.sh` — applies all AAP/EDA objects
-- `./scripts/test-trigger.sh` — fires a test event to verify the EDA-to-AO pipeline
-- `./scripts/test-ao-approval-api.py` — debug tool for AO approval API
+- Security group opens: 22 (SSH), 80 (HTTP), 443 (nginx TLS), 8443 (Tomcat TLS), 8200 (Vault), 8000/8088/8089 (Splunk)
+- All services (nginx, Tomcat, Vault container, Splunk container) run on a single demo VM
 
 ## Deployment Order
 
-Customize the project for the use case first. Then:
-
 1. Build DE + EE images (`./dependencies/build-images.sh --push`)
 2. `terraform apply` (provisions EC2)
-3. `setup-apply.sh` (installs application on demo host)
+3. `setup-apply.sh` (installs nginx + Vault + Tomcat + Splunk)
 4. `cac-apply.sh` (creates AAP objects — needs project synced first)
-5. Import AO workflow in AO UI, configure agentic nodes, publish
+5. Import AO workflow in AO UI, configure agentic node AI credential + MCP, publish
 6. Update `.env` with AO webhook creds, re-run `cac-apply.sh`
 7. Restart EDA activation in AAP UI
-8. `./scripts/test-trigger.sh` (verify the pipeline)
+8. `generate_expired_cert.yml` (reset certs to trigger demo)
+9. `./scripts/test-trigger.sh` (verify the pipeline)

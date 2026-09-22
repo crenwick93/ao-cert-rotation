@@ -1,0 +1,239 @@
+---
+# Provision Tomcat with a Java keystore certificate from Vault.
+#
+# Installs Java + Tomcat, requests a certificate from Vault,
+# imports it into a Java keystore, and configures Tomcat HTTPS on :8443.
+#
+# Prerequisites: provision_vm.yml must have run first (Vault must be running).
+#
+# Usage:
+#   ansible-playbook -i setup/playbooks/inventory/hosts.yml setup/playbooks/provision_tomcat.yml
+
+- name: Provision Demo VM — Tomcat + Java Keystore
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    cert_domain: "{{ lookup('env', 'CERT_DOMAIN') | default('certdemo.demoredhat.com', true) }}"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('demo-root-token', true) }}"
+    vault_addr: "http://127.0.0.1:8200"
+    cert_ttl: "2160h"
+    tomcat_home: /opt/tomcat
+    keystore_path: /opt/tomcat/conf/keystore.jks
+    keystore_password: changeit
+
+  tasks:
+    # ── Install Java + Tomcat ───────────────────────────────────
+    - name: Install Java
+      ansible.builtin.dnf:
+        name:
+          - java-17-openjdk
+          - java-17-openjdk-devel
+        state: present
+
+    - name: Create tomcat user
+      ansible.builtin.user:
+        name: tomcat
+        system: true
+        shell: /sbin/nologin
+        home: "{{ tomcat_home }}"
+        create_home: false
+
+    - name: Download Tomcat
+      ansible.builtin.unarchive:
+        src: https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.20/bin/apache-tomcat-10.1.20.tar.gz
+        dest: /opt
+        remote_src: true
+        creates: /opt/apache-tomcat-10.1.20
+
+    - name: Create symlink
+      ansible.builtin.file:
+        src: /opt/apache-tomcat-10.1.20
+        dest: "{{ tomcat_home }}"
+        state: link
+
+    - name: Set ownership
+      ansible.builtin.file:
+        path: /opt/apache-tomcat-10.1.20
+        owner: tomcat
+        group: tomcat
+        recurse: true
+
+    # ── Pull CA certificate from Vault ──────────────────────────
+    - name: Get CA certificate from Vault
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki/ca/pem"
+        method: GET
+        return_content: true
+        status_code: [200]
+      register: ca_cert
+
+    - name: Save CA cert for keystore import
+      ansible.builtin.copy:
+        content: "{{ ca_cert.content }}"
+        dest: /tmp/vault-ca.pem
+        mode: "0644"
+
+    # ── Issue certificate from Vault ────────────────────────────
+    - name: Issue certificate from Vault for API server
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki/issue/cert-demo"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          common_name: "{{ cert_domain }}"
+          ttl: "{{ cert_ttl }}"
+          ip_sans: "{{ ansible_default_ipv4.address }},127.0.0.1"
+        return_content: true
+        status_code: [200]
+      register: cert_result
+
+    - name: Save certificate PEM
+      ansible.builtin.copy:
+        content: "{{ cert_result.json.data.certificate }}"
+        dest: /tmp/api-server.crt
+        mode: "0644"
+
+    - name: Save private key PEM
+      ansible.builtin.copy:
+        content: "{{ cert_result.json.data.private_key }}"
+        dest: /tmp/api-server.key
+        mode: "0600"
+
+    # ── Build Java Keystore ─────────────────────────────────────
+    - name: Create PKCS12 bundle from PEM cert + key
+      ansible.builtin.command:
+        cmd: >
+          openssl pkcs12 -export
+          -in /tmp/api-server.crt
+          -inkey /tmp/api-server.key
+          -out /tmp/api-server.p12
+          -name tomcat
+          -passout pass:{{ keystore_password }}
+      changed_when: true
+
+    - name: Remove existing keystore
+      ansible.builtin.file:
+        path: "{{ keystore_path }}"
+        state: absent
+
+    - name: Import PKCS12 into Java keystore
+      ansible.builtin.command:
+        cmd: >
+          keytool -importkeystore
+          -srckeystore /tmp/api-server.p12
+          -srcstoretype PKCS12
+          -srcstorepass {{ keystore_password }}
+          -destkeystore {{ keystore_path }}
+          -deststoretype JKS
+          -deststorepass {{ keystore_password }}
+          -alias tomcat
+          -noprompt
+      changed_when: true
+
+    - name: Import CA cert into keystore
+      ansible.builtin.command:
+        cmd: >
+          keytool -importcert
+          -keystore {{ keystore_path }}
+          -storepass {{ keystore_password }}
+          -alias vault-ca
+          -file /tmp/vault-ca.pem
+          -noprompt
+      changed_when: true
+
+    - name: Set keystore ownership
+      ansible.builtin.file:
+        path: "{{ keystore_path }}"
+        owner: tomcat
+        group: tomcat
+        mode: "0640"
+
+    # ── Configure Tomcat HTTPS ──────────────────────────────────
+    - name: Deploy Tomcat server.xml with HTTPS connector
+      ansible.builtin.copy:
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Server port="8005" shutdown="SHUTDOWN">
+            <Service name="Catalina">
+              <Connector port="8443"
+                         protocol="org.apache.coyote.http11.Http11NioProtocol"
+                         maxThreads="150"
+                         SSLEnabled="true"
+                         scheme="https"
+                         secure="true">
+                <SSLHostConfig>
+                  <Certificate certificateKeystoreFile="{{ keystore_path }}"
+                               certificateKeystorePassword="{{ keystore_password }}"
+                               type="RSA" />
+                </SSLHostConfig>
+              </Connector>
+              <Engine name="Catalina" defaultHost="localhost">
+                <Host name="localhost" appBase="webapps"
+                      unpackWARs="true" autoDeploy="true" />
+              </Engine>
+            </Service>
+          </Server>
+        dest: "{{ tomcat_home }}/conf/server.xml"
+        owner: tomcat
+        group: tomcat
+        mode: "0644"
+      notify: Restart Tomcat
+
+    # ── Tomcat systemd service ──────────────────────────────────
+    - name: Create Tomcat systemd unit
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+          Description=Apache Tomcat
+          After=network.target
+
+          [Service]
+          Type=forking
+          User=tomcat
+          Group=tomcat
+          Environment=JAVA_HOME=/usr/lib/jvm/jre-17-openjdk
+          Environment=CATALINA_HOME={{ tomcat_home }}
+          ExecStart={{ tomcat_home }}/bin/startup.sh
+          ExecStop={{ tomcat_home }}/bin/shutdown.sh
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/tomcat.service
+        mode: "0644"
+
+    - name: Reload systemd and start Tomcat
+      ansible.builtin.systemd:
+        daemon_reload: true
+        name: tomcat
+        state: started
+        enabled: true
+
+    # ── Cleanup temp files ──────────────────────────────────────
+    - name: Remove temporary cert files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/api-server.crt
+        - /tmp/api-server.key
+        - /tmp/api-server.p12
+        - /tmp/vault-ca.pem
+
+    - name: Display provision summary
+      ansible.builtin.debug:
+        msg: |
+          === Tomcat Provisioned ===
+          API Server: https://{{ cert_domain }}:8443
+          Keystore: {{ keystore_path }}
+          Cert Type: Java Keystore (JKS)
+
+  handlers:
+    - name: Restart Tomcat
+      ansible.builtin.systemd:
+        name: tomcat
+        state: restarted

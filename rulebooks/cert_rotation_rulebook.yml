@@ -1,0 +1,45 @@
+---
+# EDA rulebook for the cert rotation demo.
+#
+# Monitors ServiceNow change requests and bridges CR approval to the
+# Automation Orchestrator approval gate. When an operator approves a
+# cert renewal CR in ServiceNow (state = Implement), this rulebook
+# fires the bridge_ao_approval.yml playbook to programmatically
+# approve the AO workflow step.
+#
+# The primary trigger (Splunk cert alert) goes directly to AO via webhook.
+# This rulebook only handles the SNOW CR approval bridge.
+#
+# Requires a Decision Environment with servicenow.itsm for the
+# servicenow.itsm.records source plugin. See dependencies/de/decision-environment.yml.
+
+# ─── ServiceNow CR Approval Bridge ───────────────────────────────────
+- name: Cert Rotation — CR Approval Bridge
+  hosts: all
+  sources:
+    - servicenow.itsm.records:
+        table: change_request
+        interval: 10
+        remote_servicenow_timezone: "Europe/London"
+        sysparm_query: >
+          ORDERBYDESCsys_updated_on^ORDERBYDESCsys_id^short_descriptionLIKECertificate renewal
+      filters:
+        - ansible.eda.json_filter:
+        - ansible.eda.normalize_keys:
+  rules:
+    - name: CR moved to Implement — bridge approval to AO
+      throttle:
+        once_within: 10 minutes
+        group_by_attributes:
+          - sys_id
+      # state == '-1' is the Implement state in ServiceNow
+      condition: event.state == '-1'
+      action:
+        run_job_template:
+          name: Bridge AO Approval
+          organization: Default
+          job_args:
+            extra_vars:
+              cr_number: "{{ event.number }}"
+              cr_sys_id: "{{ event.sys_id }}"
+              cr_short_description: "{{ event.short_description }}"

@@ -1,73 +1,21 @@
 ---
-# Minimal demo host setup playbook.
+# Master setup playbook for the cert rotation demo.
 #
-# Customize this for your demo — install your application, configure
-# services, and set up monitoring as needed.
+# Runs all provisioning playbooks in sequence:
+#   1. provision_vm.yml    — nginx + Vault + initial certs
+#   2. provision_tomcat.yml — Java/Tomcat + keystore cert
+#   3. provision_splunk.yml — Splunk + cert monitoring + cron
 #
 # Usage:
-#   ansible-playbook setup/playbooks/setup_demo_host.yml -i setup/playbooks/inventory/hosts.yml
+#   ansible-playbook -i setup/playbooks/inventory/hosts.yml setup/playbooks/setup_demo_host.yml
+#
+# Or run each playbook individually for troubleshooting.
 
-- name: Setup Demo Host
-  hosts: all
-  become: true
-  gather_facts: true
+- name: "Phase 1: Provision nginx + Vault"
+  ansible.builtin.import_playbook: provision_vm.yml
 
-  vars:
-    # Customize: add your application-specific vars here
-    demo_packages:
-      - httpd
-    demo_services:
-      - httpd
+- name: "Phase 2: Provision Tomcat + Java Keystore"
+  ansible.builtin.import_playbook: provision_tomcat.yml
 
-  tasks:
-    - name: Install demo packages
-      ansible.builtin.dnf:
-        name: "{{ demo_packages }}"
-        state: present
-
-    - name: Start and enable demo services
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        state: started
-        enabled: true
-      loop: "{{ demo_services }}"
-
-    - name: Create a basic index page
-      ansible.builtin.copy:
-        content: |
-          <html>
-          <head><title>AO Demo</title></head>
-          <body>
-            <h1>AO Demo Host</h1>
-            <p>Host: {{ ansible_hostname }}</p>
-            <p>IP: {{ ansible_default_ipv4.address }}</p>
-          </body>
-          </html>
-        dest: /var/www/html/index.html
-        mode: "0644"
-
-    # ─── Customize below ──────────────────────────────────────────
-    # Add your application-specific setup tasks here:
-    #
-    # - name: Install your application
-    #   ansible.builtin.dnf:
-    #     name: your-app
-    #     state: present
-    #
-    # - name: Deploy configuration
-    #   ansible.builtin.template:
-    #     src: templates/your-app.conf.j2
-    #     dest: /etc/your-app/config.conf
-    #
-    # - name: Setup monitoring agent
-    #   ansible.builtin.include_role:
-    #     name: monitoring_agent
-
-    - name: Display setup summary
-      ansible.builtin.debug:
-        msg: |
-          === Demo Host Ready ===
-          Hostname: {{ ansible_hostname }}
-          IP: {{ ansible_default_ipv4.address }}
-          Services: {{ demo_services | join(', ') }}
-          HTTP: http://{{ ansible_default_ipv4.address }}
+- name: "Phase 3: Provision Splunk + Cert Monitoring"
+  ansible.builtin.import_playbook: provision_splunk.yml

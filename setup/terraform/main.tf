@@ -89,10 +89,14 @@ resource "aws_security_group" "demo" {
 
   dynamic "ingress" {
     for_each = {
-      ssh  = { port = 22, desc = "SSH" }
-      http = { port = 80, desc = "HTTP" }
-      # Add more ports as needed for your demo:
-      # https = { port = 443, desc = "HTTPS" }
+      ssh         = { port = 22,   desc = "SSH" }
+      http        = { port = 80,   desc = "HTTP" }
+      https       = { port = 443,  desc = "nginx TLS (PEM cert)" }
+      api_server  = { port = 8443, desc = "Tomcat TLS (Java keystore)" }
+      vault       = { port = 8200, desc = "HashiCorp Vault" }
+      splunk_ui   = { port = 8000, desc = "Splunk Web UI" }
+      splunk_hec  = { port = 8088, desc = "Splunk HTTP Event Collector" }
+      splunk_mgmt = { port = 8089, desc = "Splunk Management API" }
     }
     content {
       from_port   = ingress.value.port

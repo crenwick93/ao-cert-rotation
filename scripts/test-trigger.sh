@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-# Fire a test event to the AO workflow trigger endpoint.
-# Verifies the EDA-to-AO bridge is working end-to-end.
+# Fire a test cert expiry event to the AO workflow trigger endpoint.
+# Simulates a Splunk alert for a certificate with 5 days remaining.
 #
 # Usage:
 #   ./scripts/test-trigger.sh
-#   ./scripts/test-trigger.sh '{"incident_number":"INC001","incident_description":"Test event"}'
+#   ./scripts/test-trigger.sh '{"host":"certdemo.demoredhat.com","service":"api-server","cert_type":"java_keystore","port":8443,"status":"critical","days_remaining":5}'
 #
 # Prerequisites:
 #   .env must have AO_WEBHOOK_BASE_URL, AO_WEBHOOK_PATH,
@@ -28,7 +28,9 @@ if [[ -z "${AO_WEBHOOK_BASE_URL:-}" || -z "${AO_WEBHOOK_PATH:-}" || -z "${AO_WEB
   exit 1
 fi
 
-PAYLOAD="${1:-{\"incident_number\":\"INC0000001\",\"incident_sys_id\":\"test-sys-id\",\"incident_description\":\"Test event from test-trigger.sh\",\"incident_urgency\":\"2\",\"incident_impact\":\"2\"}}"
+CERT_DOMAIN="${CERT_DOMAIN:-certdemo.demoredhat.com}"
+
+PAYLOAD="${1:-{\"host\":\"${CERT_DOMAIN}\",\"service\":\"nginx\",\"cert_type\":\"pem\",\"port\":443,\"status\":\"critical\",\"days_remaining\":5,\"expiry_date\":\"$(date -d '+5 days' '+%b %d %H:%M:%S %Y GMT' 2>/dev/null || date -v+5d '+%b %d %H:%M:%S %Y GMT')\",\"issuer\":\"Demo Certificate Authority\"}}"
 
 echo "Authenticating with AO..."
 TOKEN=$(curl -sk -X POST "${AO_WEBHOOK_BASE_URL}/api/v1/auth/token" \
@@ -36,7 +38,10 @@ TOKEN=$(curl -sk -X POST "${AO_WEBHOOK_BASE_URL}/api/v1/auth/token" \
   -d "grant_type=client_credentials&client_id=${AO_WEBHOOK_CLIENT_ID}&client_secret=${AO_WEBHOOK_CLIENT_SECRET}" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-echo "Posting test event to ${AO_WEBHOOK_BASE_URL}/api/v1/webhooks/eda/${AO_WEBHOOK_PATH}..."
+echo "Posting test cert alert to ${AO_WEBHOOK_BASE_URL}/api/v1/webhooks/eda/${AO_WEBHOOK_PATH}..."
+echo "Payload: ${PAYLOAD}" | python3 -m json.tool 2>/dev/null || echo "Payload: ${PAYLOAD}"
+echo ""
+
 RESPONSE=$(curl -sk -X POST "${AO_WEBHOOK_BASE_URL}/api/v1/webhooks/eda/${AO_WEBHOOK_PATH}" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
@@ -47,7 +52,7 @@ HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
 BODY=$(echo "${RESPONSE}" | head -n -1)
 
 if [[ "${HTTP_CODE}" == "202" ]]; then
-  echo "✅ Workflow triggered successfully"
+  echo "✅ Cert rotation workflow triggered successfully"
   echo "${BODY}" | python3 -m json.tool 2>/dev/null || echo "${BODY}"
 else
   echo "❌ Failed (HTTP ${HTTP_CODE})"

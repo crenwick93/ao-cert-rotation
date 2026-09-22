@@ -2,12 +2,37 @@
 # Global variables for all playbooks.
 # Override per host group for environment-specific values.
 
-# Service health checks — used by pre/post-check playbooks
-# Customize for your application's critical services
+# Certificate domain — must resolve to the demo VM IP
+cert_domain: "{{ lookup('env', 'CERT_DOMAIN') | default('certdemo.demoredhat.com', true) }}"
+
+# HashiCorp Vault CA — runs in dev mode on the demo VM
+vault_addr: "http://127.0.0.1:8200"
+vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('demo-root-token', true) }}"
+vault_pki_path: "pki"
+vault_pki_role: "cert-demo"
+
+# Certificate services and their configurations
+cert_services:
+  nginx:
+    port: 443
+    cert_type: pem
+    cert_path: /etc/pki/tls/certs/server.crt
+    key_path: /etc/pki/tls/private/server.key
+    ca_path: /etc/pki/tls/certs/ca.crt
+    reload_cmd: "systemctl reload nginx"
+  api_server:
+    port: 8443
+    cert_type: java_keystore
+    keystore_path: /opt/tomcat/conf/keystore.jks
+    keystore_password: changeit
+    restart_cmd: "systemctl restart tomcat"
+
+# Critical services — used by validation and health checks
 critical_services:
   - sshd
-  # - httpd
-  # - nginx
+  - nginx
+  - tomcat
 
-# HTTP health endpoint for service validation
-health_endpoint: "http://localhost:80"
+# Splunk HEC — used by cert monitoring scripts on the demo VM
+splunk_hec_url: "https://localhost:8088"
+splunk_hec_token: "{{ lookup('env', 'SPLUNK_HEC_TOKEN') | default('', true) }}"

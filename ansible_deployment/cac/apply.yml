@@ -40,13 +40,17 @@
     demo_ssh_key: "{{ lookup('file', demo_ssh_key_path, errors='ignore') | default(omit, true) }}"
     demo_ssh_key_path: "{{ lookup('env', 'DEMO_SSH_KEY_PATH') | default(playbook_dir + '/../../setup/terraform/demo-key.pem', true) }}"
 
-    # GitHub (for AAP project SCM URL + Git operations credential)
-    github_repo: "{{ lookup('env', 'GITHUB_REPO') | default('YOUR_ORG/ao-baseline', true) }}"
+    # GitHub (for AAP project SCM URL)
+    github_repo: "{{ lookup('env', 'GITHUB_REPO') | default('YOUR_ORG/ao-cert-rotation', true) }}"
     git_repo_url: "{{ 'https://github.com/' ~ github_repo ~ '.git' }}"
-    github_token: "{{ lookup('env', 'GITHUB_TOKEN') | default('placeholder', true) }}"
 
     # EDA custom Decision Environment image
     de_image: "{{ lookup('env', 'DE_IMAGE') | default('YOUR_REGISTRY/snow-de:latest', true) }}"
+
+    # Cert demo — Vault credentials
+    cert_domain: "{{ lookup('env', 'CERT_DOMAIN') | default('certdemo.demoredhat.com', true) }}"
+    vault_addr: "http://{{ lookup('env', 'DEMO_HOST_IP') | default('127.0.0.1', true) }}:8200"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('demo-root-token', true) }}"
 
   vars_files:
     - vars.yml

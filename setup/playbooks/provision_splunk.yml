@@ -1,0 +1,179 @@
+---
+# Provision Splunk on the demo VM as a podman container.
+#
+# Sets up Splunk Enterprise with HEC (HTTP Event Collector),
+# a cert_monitor index, a saved search for near-expiry certs,
+# and a webhook alert that fires to the AO endpoint.
+# Also installs the cert monitoring cron scripts.
+#
+# Usage:
+#   ansible-playbook -i setup/playbooks/inventory/hosts.yml setup/playbooks/provision_splunk.yml \
+#     -e SPLUNK_PASSWORD='yourpassword' \
+#     -e ao_webhook_url='http://<AO_HOST>:8080/api/v1/webhooks/splunk-cert-alert'
+
+- name: Provision Splunk + Cert Monitoring
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    splunk_password: "{{ lookup('env', 'SPLUNK_PASSWORD') | default('changeme123', true) }}"
+    cert_domain: "{{ lookup('env', 'CERT_DOMAIN') | default('certdemo.demoredhat.com', true) }}"
+    ao_webhook_url: "{{ lookup('env', 'AO_WEBHOOK_URL') | default('http://localhost:8080/api/v1/webhooks/splunk-cert-alert', true) }}"
+    splunk_hec_token: ""
+
+  tasks:
+    # ── Splunk container ────────────────────────────────────────
+    - name: Remove existing Splunk container if present
+      containers.podman.podman_container:
+        name: splunk
+        state: absent
+      ignore_errors: true
+
+    - name: Start Splunk container
+      containers.podman.podman_container:
+        name: splunk
+        image: docker.io/splunk/splunk:latest
+        state: started
+        restart_policy: always
+        ports:
+          - "8000:8000"
+          - "8088:8088"
+          - "8089:8089"
+        env:
+          SPLUNK_START_ARGS: "--accept-license"
+          SPLUNK_PASSWORD: "{{ splunk_password }}"
+
+    - name: Wait for Splunk to be ready
+      ansible.builtin.uri:
+        url: "https://localhost:8089/services/server/health/splunkd"
+        method: GET
+        user: admin
+        password: "{{ splunk_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        status_code: [200]
+      register: splunk_health
+      retries: 60
+      delay: 5
+      until: splunk_health.status == 200
+
+    # ── Configure HEC ───────────────────────────────────────────
+    - name: Enable HEC global settings
+      ansible.builtin.uri:
+        url: "https://localhost:8089/servicesNS/admin/splunk_httpinput/data/inputs/http/http"
+        method: POST
+        user: admin
+        password: "{{ splunk_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        body_format: form-urlencoded
+        body:
+          disabled: "0"
+          enableSSL: "1"
+        status_code: [200, 201, 409]
+
+    - name: Create HEC token for cert monitoring
+      ansible.builtin.uri:
+        url: "https://localhost:8089/servicesNS/admin/splunk_httpinput/data/inputs/http"
+        method: POST
+        user: admin
+        password: "{{ splunk_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        body_format: form-urlencoded
+        body:
+          name: cert_monitor
+          index: main
+          sourcetype: cert_monitor
+        return_content: true
+        status_code: [200, 201, 409]
+      register: hec_result
+
+    - name: Retrieve HEC token value
+      ansible.builtin.uri:
+        url: "https://localhost:8089/servicesNS/admin/splunk_httpinput/data/inputs/http/cert_monitor"
+        method: GET
+        user: admin
+        password: "{{ splunk_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        return_content: true
+        headers:
+          Accept: application/json
+        status_code: [200]
+      register: hec_token_result
+
+    - name: Extract HEC token
+      ansible.builtin.set_fact:
+        splunk_hec_token: "{{ hec_token_result.json.entry[0].content.token }}"
+
+    # ── Create saved search + alert ─────────────────────────────
+    - name: Create saved search with webhook alert
+      ansible.builtin.uri:
+        url: "https://localhost:8089/servicesNS/admin/search/saved/searches"
+        method: POST
+        user: admin
+        password: "{{ splunk_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        body_format: form-urlencoded
+        body:
+          name: "Certificate Expiry Alert"
+          search: "index=main sourcetype=cert_monitor days_remaining<=7 earliest=-5m | head 1"
+          is_scheduled: "1"
+          cron_schedule: "*/4 * * * *"
+          alert_type: "number of events"
+          alert_comparator: "greater than"
+          alert_threshold: "0"
+          alert.suppress: "1"
+          alert.suppress.period: "5m"
+          actions: "webhook"
+          action.webhook.param.url: "{{ ao_webhook_url }}"
+        status_code: [200, 201, 409]
+
+    # ── Install cert monitoring scripts ─────────────────────────
+    - name: Install check_cert.sh
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/check_cert.sh"
+        dest: /usr/local/bin/check_cert.sh
+        mode: "0755"
+
+    - name: Install push_cert_to_splunk.sh
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/push_cert_to_splunk.sh"
+        dest: /usr/local/bin/push_cert_to_splunk.sh
+        mode: "0755"
+
+    - name: Configure Splunk HEC token in push script environment
+      ansible.builtin.copy:
+        content: |
+          SPLUNK_HEC_TOKEN={{ splunk_hec_token }}
+          CERT_DOMAIN={{ cert_domain }}
+        dest: /etc/sysconfig/cert-monitor
+        mode: "0600"
+
+    - name: Install cron job for cert monitoring (every minute)
+      ansible.builtin.cron:
+        name: "cert-monitor-push"
+        minute: "*"
+        job: ". /etc/sysconfig/cert-monitor && /usr/local/bin/push_cert_to_splunk.sh"
+        user: root
+
+    # ── Auto-update .env with HEC token ───────────────────────────
+    - name: Write SPLUNK_HEC_TOKEN back to local .env
+      ansible.builtin.lineinfile:
+        path: "{{ playbook_dir }}/../../.env"
+        regexp: '^SPLUNK_HEC_TOKEN='
+        line: "SPLUNK_HEC_TOKEN={{ splunk_hec_token }}"
+      delegate_to: localhost
+      become: false
+
+    - name: Display provision summary
+      ansible.builtin.debug:
+        msg: |
+          === Splunk Provisioned ===
+          Splunk UI: http://{{ ansible_default_ipv4.address }}:8000 (admin / {{ splunk_password }})
+          HEC Token: {{ splunk_hec_token }} (auto-written to .env)
+          Alert: fires webhook to {{ ao_webhook_url }} when days_remaining <= 7
+          Cron: cert checks running every minute

@@ -17,6 +17,9 @@ dependencies:
     collections:
       - name: servicenow.itsm
       - name: ansible.controller
+      - name: community.crypto
+      - name: containers.podman
+      - name: ansible.posix
   system:
     - pkgconf-pkg-config [platform:rpm]
     - systemd-devel [platform:rpm]
