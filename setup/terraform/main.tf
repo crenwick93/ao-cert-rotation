@@ -84,7 +84,7 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_security_group" "demo" {
   name_prefix = "ao-demo-"
-  description = "AO demo host — SSH + HTTP"
+  description = "AO demo host - SSH, HTTP, TLS, Vault, Splunk"
   vpc_id      = aws_vpc.demo.id
 
   dynamic "ingress" {

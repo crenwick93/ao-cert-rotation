@@ -42,6 +42,7 @@
           - "8089:8089"
         env:
           SPLUNK_START_ARGS: "--accept-license"
+          SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
           SPLUNK_PASSWORD: "{{ splunk_password }}"
 
     - name: Wait for Splunk to be ready
@@ -92,15 +93,13 @@
 
     - name: Retrieve HEC token value
       ansible.builtin.uri:
-        url: "https://localhost:8089/servicesNS/admin/splunk_httpinput/data/inputs/http/cert_monitor"
+        url: "https://localhost:8089/servicesNS/admin/splunk_httpinput/data/inputs/http/cert_monitor?output_mode=json"
         method: GET
         user: admin
         password: "{{ splunk_password }}"
         validate_certs: false
         force_basic_auth: true
         return_content: true
-        headers:
-          Accept: application/json
         status_code: [200]
       register: hec_token_result
 

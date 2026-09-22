@@ -1,5 +1,12 @@
 # Intelligent Cert Rotation — Project Rules
 
+## Security Rules
+
+- **NEVER read `.env`** — it contains secrets (passwords, tokens, API keys). It is in `.gitignore` and must not be accessed by Cursor, even to check which keys are populated or to mask values.
+- **NEVER read `*.pem` files** — private keys.
+- **NEVER read `terraform.tfstate`** — contains infrastructure secrets.
+- If you need to verify a `.env` value is set, ask the user — do not read the file.
+
 ## What This Project Is
 
 An AO (Automation Orchestrator) demo for intelligent certificate rotation. Splunk detects near-expiry certs, ServiceNow tracks the incident/CR lifecycle, an AI agent picks the correct renewal strategy (PEM vs Java keystore), an operator approves via SNOW, and AAP renews and validates TLS automatically.

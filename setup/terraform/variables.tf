@@ -5,9 +5,9 @@ variable "aws_region" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type"
+  description = "EC2 instance type (t3.medium minimum — Splunk needs 1GB+)"
   type        = string
-  default     = "t3.small"
+  default     = "t3.medium"
 }
 
 variable "allowed_cidr" {
