@@ -85,13 +85,10 @@
         "organization_name": "Default",
         "extra_vars": {
           "action": "create_standard",
+          "change_template_name": "Certificate Renewal - PEM",
+          "cmdb_ci_name": "citizen-portal-web",
           "short_description": "Certificate renewal: ${trigger.service} on ${trigger.host} (PEM - reload, zero downtime)",
-          "description": "Automated PEM certificate renewal.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nPort: ${trigger.port}\nCert Type: PEM\nDays Remaining: ${trigger.days_remaining}\nExpiry: ${trigger.expiry_date}\n\nService impact: nginx reload (zero downtime).",
-          "cr_risk": "low",
-          "cr_impact": 3,
-          "implementation_plan": "1. Request new PEM certificate from Vault CA.\n2. Replace cert and key files on ${trigger.host}.\n3. Reload nginx (zero downtime \u2014 no service restart).\n4. Automated TLS validation.",
-          "backout_plan": "Restore /etc/pki/tls/certs/server.crt.bak and /etc/pki/tls/private/server.key.bak, then reload nginx.",
-          "test_plan": "OpenSSL TLS handshake check on ${trigger.host}:${trigger.port} verifying subject, issuer, and expiry > 7 days."
+          "description": "Automated PEM certificate renewal.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nPort: ${trigger.port}\nCert Type: PEM\nDays Remaining: ${trigger.days_remaining}\nExpiry: ${trigger.expiry_date}\n\nService impact: nginx reload (zero downtime)."
         }
       },
       "position": {
@@ -164,14 +161,11 @@
         "organization_name": "Default",
         "extra_vars": {
           "action": "create_standard",
+          "change_template_name": "Certificate Renewal - Java Keystore",
+          "cmdb_ci_name": "citizen-portal-api",
+          "cr_assignment_group": "Application Services",
           "short_description": "Certificate renewal: ${trigger.service} on ${trigger.host} (Java keystore - RESTART REQUIRED)",
-          "description": "Java keystore certificate renewal requiring service restart.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nPort: ${trigger.port}\nCert Type: Java Keystore\nDays Remaining: ${trigger.days_remaining}\nExpiry: ${trigger.expiry_date}\n\nWARNING: This renewal requires a full Tomcat restart. Brief downtime expected.",
-          "cr_risk": "medium",
-          "cr_impact": 2,
-          "assignment_group": "Application Services",
-          "implementation_plan": "1. Request new certificate from Vault CA.\n2. Convert PEM to PKCS12 and import into Java keystore.\n3. RESTART Tomcat service (brief downtime expected).\n4. Automated TLS validation.",
-          "backout_plan": "Restore /opt/tomcat/conf/keystore.jks.bak and restart Tomcat.",
-          "test_plan": "OpenSSL TLS handshake check on ${trigger.host}:${trigger.port} verifying subject, issuer, and expiry > 7 days."
+          "description": "Java keystore certificate renewal requiring service restart.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nPort: ${trigger.port}\nCert Type: Java Keystore\nDays Remaining: ${trigger.days_remaining}\nExpiry: ${trigger.expiry_date}\n\nWARNING: This renewal requires a full Tomcat restart. Brief downtime expected."
         }
       },
       "position": {

@@ -84,7 +84,7 @@
     - name: Look up standard change template producer
       servicenow.itsm.api_info:
         resource: std_change_record_producer
-        sysparm_query: "nameLIKE{{ change_template_name | default('Reboot Windows Server') }}"
+        sysparm_query: "name={{ change_template_name }}"
         columns: "sys_id,name"
       register: template_lookup
       when:
@@ -96,6 +96,20 @@
         _template_producer_id: "{{ change_template_id | default(template_lookup.record[0].sys_id) }}"
       when: action == 'create_standard'
 
+    - name: Look up CMDB CI by name
+      servicenow.itsm.configuration_item_info:
+        name: "{{ cmdb_ci_name }}"
+      register: ci_lookup
+      when:
+        - action == 'create_standard'
+        - cmdb_ci_name is defined
+        - cmdb_ci is not defined
+
+    - name: Set CI sys_id
+      ansible.builtin.set_fact:
+        _cmdb_ci: "{{ cmdb_ci | default(ci_lookup.records[0].sys_id | default(omit)) }}"
+      when: action == 'create_standard'
+
     - name: Create standard Change Request via REST API
       servicenow.itsm.api:
         resource: sn_chg_rest/change/standard/{{ _template_producer_id }}
@@ -104,10 +118,8 @@
           short_description: "{{ short_description }}"
           description: "{{ description | default('') }}"
           assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
+          cmdb_ci: "{{ _cmdb_ci | default(omit) }}"
           justification: "{{ justification | default('Automated certificate renewal.') }}"
-          implementation_plan: "{{ implementation_plan | default('Automated by Ansible Automation Platform.') }}"
-          backout_plan: "{{ backout_plan | default('Restore certificate from backup and reload/restart service.') }}"
-          test_plan: "{{ test_plan | default('Automated TLS validation after renewal.') }}"
       register: cr_std_result
       when: action == 'create_standard'
 
