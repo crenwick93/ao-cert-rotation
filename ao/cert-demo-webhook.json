@@ -131,14 +131,29 @@
       "position": { "x": 1200, "y": 650 }
     },
     {
-      "id": "approval_gate",
-      "type": "approval",
-      "name": "Approve Restart Window",
+      "id": "schedule_keystore",
+      "type": "aap_job_template",
+      "name": "Progress to Scheduled",
       "parameters": {
-        "description": "Java keystore renewal requires a Tomcat restart (brief downtime).\n\nCR: ${create_change_keystore.artifacts.cr_number}\nHost: ${trigger.host}\nService: ${trigger.service}\nDays Remaining: ${trigger.days_remaining}\n\nThis is a pre-authorized standard change. Approval is for the maintenance window timing, not the process itself.",
-        "timeout": 0
+        "job_template_name": "Manage SNOW Change Request",
+        "organization_name": "Default",
+        "extra_vars": {
+          "action": "schedule",
+          "cr_sys_id": "${create_change_keystore.artifacts.cr_sys_id}",
+          "cr_assignment_group": "Application Services"
+        }
       },
       "position": { "x": 1800, "y": 650 }
+    },
+    {
+      "id": "approval_gate",
+      "type": "approval",
+      "name": "Awaiting Implementation",
+      "parameters": {
+        "description": "Java keystore renewal requires a Tomcat restart (brief downtime).\n\nCR: ${create_change_keystore.artifacts.cr_number}\nHost: ${trigger.host}\nService: ${trigger.service}\nDays Remaining: ${trigger.days_remaining}\n\nThe CR is in Scheduled state in ServiceNow. Move it to Implement when ready. EDA will auto-approve this gate.",
+        "timeout": 0
+      },
+      "position": { "x": 2400, "y": 650 }
     },
     {
       "id": "renew_keystore",
@@ -213,7 +228,8 @@
     { "from": "validate_pem", "to": "close_change_pem" },
 
     { "from": "cert_type_switch", "to": "create_change_keystore", "from_port": "case_keystore" },
-    { "from": "create_change_keystore", "to": "approval_gate" },
+    { "from": "create_change_keystore", "to": "schedule_keystore" },
+    { "from": "schedule_keystore", "to": "approval_gate" },
     { "from": "approval_gate", "to": "renew_keystore", "from_port": "approved" },
     { "from": "approval_gate", "to": "rejection_handler", "from_port": "rejected" },
     { "from": "renew_keystore", "to": "validate_keystore" },

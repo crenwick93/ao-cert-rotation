@@ -123,13 +123,13 @@ controller_credentials:
       webhook_client_secret: "{{ ao_webhook_client_secret }}"
 
   - name: "AO API"
-    description: "Service account for AO approval bridge"
+    description: "Service account for AO approval bridge (uses webhook credentials)"
     organization: "Default"
     credential_type: "AO API Credential"
     inputs:
-      ao_sa_client_id: "{{ ao_sa_client_id }}"
-      ao_sa_client_secret: "{{ ao_sa_client_secret }}"
-      ao_base_url: "{{ ao_base_url }}"
+      ao_sa_client_id: "{{ ao_webhook_client_id }}"
+      ao_sa_client_secret: "{{ ao_webhook_client_secret }}"
+      ao_base_url: "{{ ao_webhook_base_url }}"
 
   - name: "Citizen Digital Service SSH"
     description: "SSH key for cert demo EC2 host (citizen-portal-web, citizen-portal-api)"

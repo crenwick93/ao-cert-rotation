@@ -27,8 +27,8 @@
       ansible.builtin.assert:
         that:
           - action is defined
-          - action in ['create', 'create_standard', 'authorize', 'update', 'review', 'close']
-        fail_msg: "action must be one of: create, create_standard, authorize, update, review, close"
+          - action in ['create', 'create_standard', 'schedule', 'authorize', 'update', 'review', 'close']
+        fail_msg: "action must be one of: create, create_standard, schedule, authorize, update, review, close"
 
     # =========================================================================
     # ACTION: create (emergency — legacy, kept for backwards compatibility)
@@ -138,6 +138,33 @@
           cr_number: "{{ cr_std_result.record.number.display_value | default(cr_std_result.record.number) }}"
         aggregate: false
       when: action == 'create_standard'
+
+    # =========================================================================
+    # ACTION: schedule
+    # Progresses a standard change from New to Scheduled.
+    # The operator then moves it to Implement in SNOW when ready.
+    # =========================================================================
+    - name: Validate schedule parameters
+      ansible.builtin.assert:
+        that:
+          - cr_sys_id is defined
+          - cr_sys_id | length > 0
+        fail_msg: "cr_sys_id must be provided for schedule action"
+      when: action == 'schedule'
+
+    - name: Progress CR to Scheduled
+      servicenow.itsm.change_request:
+        sys_id: "{{ cr_sys_id }}"
+        state: scheduled
+        assignment_group: "{{ cr_assignment_group | default('Application Services') }}"
+        other:
+          work_notes: "[code]<h3>Awaiting Implementation</h3><p>This standard change is ready for implementation. Move to Implement when the maintenance window is confirmed.</p>[/code]"
+      when: action == 'schedule'
+
+    - name: Display schedule confirmation
+      ansible.builtin.debug:
+        msg: "CR {{ cr_sys_id }} moved to Scheduled — awaiting operator to move to Implement"
+      when: action == 'schedule'
 
     # =========================================================================
     # ACTION: authorize
