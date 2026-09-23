@@ -203,12 +203,21 @@
         fail_msg: "cr_sys_id must be provided for close action"
       when: action == 'close'
 
+    - name: Progress CR to Scheduled
+      servicenow.itsm.change_request:
+        sys_id: "{{ cr_sys_id }}"
+        state: scheduled
+        assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
+      when: action == 'close'
+      ignore_errors: true
+
     - name: Progress CR to Implement
       servicenow.itsm.change_request:
         sys_id: "{{ cr_sys_id }}"
         state: implement
+        assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
         other:
-          work_notes: "[code][AUTOMATED] Certificate renewal executed by AAP.\nJob: {{ renewal_job_id | default('N/A') }}\nPlaybook: {{ renewal_playbook | default('N/A') }}\nCert Domain: {{ cert_domain | default('N/A') }}[/code]"
+          work_notes: "[code][AUTOMATED] Certificate renewal executed by AAP.[/code]"
       when: action == 'close'
       ignore_errors: true
 
@@ -216,6 +225,7 @@
       servicenow.itsm.change_request:
         sys_id: "{{ cr_sys_id }}"
         state: review
+        assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
         other:
           work_notes: "[code][AUTOMATED] Post-renewal validation completed.\n{{ close_notes | default('Validation passed.') }}[/code]"
       when: action == 'close'
@@ -227,6 +237,7 @@
         state: closed
         close_code: "{{ cr_close_code | default('successful') }}"
         close_notes: "{{ close_notes | default('Closed by automated workflow.') }}"
+        assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
       when: action == 'close'
 
     - name: Display close confirmation
