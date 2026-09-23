@@ -384,11 +384,11 @@ eda_event_streams:
 # Rulebook Activations
 # -----------------------------------------------------------------------------
 eda_rulebook_activations:
-  - name: "cert-alert-listener"
-    description: "Receives Splunk cert alerts via event stream, triggers AO workflow"
+  - name: "cert-rotation"
+    description: "Cert alert listener (via event stream) + SNOW CR approval bridge"
     organization: "Default"
     project: "Cert Rotation Demo"
-    rulebook: "cert_alert_listener.yml"
+    rulebook: "cert_rotation_rulebook.yml"
     decision_environment: "ServiceNow DE"
     enabled: true
     extra_vars:
@@ -396,18 +396,6 @@ eda_rulebook_activations:
     event_streams:
       - event_stream: "Splunk Cert Alerts"
         source_name: "splunk_cert_alerts"
-    eda_credentials:
-      - "AAP Controller Token"
-
-  - name: "cert-cr-approval-bridge"
-    description: "Polls SNOW CRs for cert renewal approval, bridges to AO approval gate"
-    organization: "Default"
-    project: "Cert Rotation Demo"
-    rulebook: "cert_cr_approval_bridge.yml"
-    decision_environment: "ServiceNow DE"
-    enabled: true
-    extra_vars:
-      webhook_path: "{{ ao_webhook_path }}"
     eda_credentials:
       - "AAP Controller Token"
       - "ServiceNow EDA"

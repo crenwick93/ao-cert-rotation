@@ -1,0 +1,62 @@
+---
+# Source 1: Splunk cert alerts — triggers AO cert lifecycle workflow
+# Source 2: ServiceNow CR approval — bridges to AO approval gate
+
+- name: Cert Alert Listener
+  hosts: all
+  sources:
+    - name: splunk_cert_alerts
+      ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5000
+  rules:
+    - name: Cert alert received — trigger AO workflow
+      condition: >-
+        event.payload.payload.cert_type is defined
+        and event.payload.payload.days_remaining is defined
+      action:
+        run_job_template:
+          name: AO Workflow Bridge
+          organization: Default
+          job_args:
+            extra_vars:
+              webhook_path: "{{ webhook_path }}"
+              event_payload:
+                host: "{{ event.payload.payload.host }}"
+                service: "{{ event.payload.payload.service }}"
+                cert_type: "{{ event.payload.payload.cert_type }}"
+                port: "{{ event.payload.payload.port | default(443) }}"
+                status: "{{ event.payload.payload.status | default('critical') }}"
+                days_remaining: "{{ event.payload.payload.days_remaining }}"
+                expiry_date: "{{ event.payload.payload.expiry_date | default('') }}"
+                issuer: "{{ event.payload.payload.issuer | default('') }}"
+
+- name: ServiceNow CR Approval Bridge
+  hosts: all
+  sources:
+    - servicenow.itsm.records:
+        table: change_request
+        interval: 10
+        sysparm_query: >
+          short_descriptionLIKECertificate renewal^
+          ORDERBYDESCsys_updated_on^ORDERBYDESCsys_id
+        remote_servicenow_timezone: "Europe/London"
+        filters:
+          - ansible.eda.json_filter:
+          - ansible.eda.normalize_keys:
+  rules:
+    - name: CR moved to Implement — bridge approval to AO
+      throttle:
+        once_within: 10 minutes
+        group_by_attributes:
+          - sys_id
+      condition: event.state == '-1'
+      action:
+        run_job_template:
+          name: Bridge AO Approval
+          organization: Default
+          job_args:
+            extra_vars:
+              cr_number: "{{ event.number }}"
+              cr_sys_id: "{{ event.sys_id }}"
+              cr_short_description: "{{ event.short_description }}"
