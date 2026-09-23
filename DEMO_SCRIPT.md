@@ -8,19 +8,8 @@ Run these commands **before** the audience arrives:
 # 1. Clear all ServiceNow CRs and incidents (clean slate)
 # Use the SNOW API or do manually in SNOW UI
 
-# 2. Reset Splunk alert (clears suppression + triggered alerts)
-ssh -i setup/terraform/demo-key.pem ec2-user@63.32.42.56 '
-sudo curl -sk -X DELETE "https://localhost:8089/servicesNS/admin/search/saved/searches/Certificate%20Expiry%20Alert" -u "admin:redhat123" -o /dev/null
-sleep 2
-sudo curl -sk -X POST "https://localhost:8089/servicesNS/admin/search/saved/searches" -u "admin:redhat123" \
-  -d "name=Certificate Expiry Alert" \
-  -d "search=index=main sourcetype=cert_monitor days_remaining<=7 earliest=-10m | head 1" \
-  -d "is_scheduled=1&cron_schedule=* * * * *" \
-  -d "alert_type=number of events&alert_comparator=greater than&alert_threshold=0" \
-  -d "actions=webhook&action.webhook.param.url=https://webhook.site/test" \
-  -d "alert.track=1&alert.suppress=1&alert.suppress.period=5m&alert.suppress.fields=service" \
-  -d "dispatch.earliest_time=-10m&dispatch.latest_time=now" -o /dev/null
-'
+# 2. Full reset (renew certs, clear Splunk, clear SNOW)
+./scripts/demo-reset.sh
 
 # 3. Expire the PEM cert (nginx) — ~5 days remaining
 ./scripts/expire-pem.sh

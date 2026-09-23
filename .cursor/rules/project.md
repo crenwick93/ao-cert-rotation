@@ -6,6 +6,7 @@
 - **NEVER read `*.pem` files** — private keys.
 - **NEVER read `terraform.tfstate`** — contains infrastructure secrets.
 - If you need to verify a `.env` value is set, ask the user — do not read the file.
+- **BEFORE EVERY GIT PUSH** — scan all changed files for hardcoded credentials (passwords, tokens, API keys, secret values). Use `grep -rn` for patterns like passwords, tokens, hostnames with auth, `admin:`, bearer tokens, etc. If any are found, replace with env var references before committing. NEVER push real credentials to Git.
 
 ## What This Project Is
 
