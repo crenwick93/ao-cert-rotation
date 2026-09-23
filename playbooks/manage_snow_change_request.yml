@@ -217,7 +217,7 @@
         state: implement
         assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
         other:
-          work_notes: "[code][AUTOMATED] Certificate renewal executed by AAP.[/code]"
+          work_notes: "[code]<h3>Implementation</h3><p>Certificate renewal executed by Ansible Automation Platform.</p>[/code]"
       when: action == 'close'
       ignore_errors: true
 
@@ -227,7 +227,7 @@
         state: review
         assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
         other:
-          work_notes: "[code][AUTOMATED] Post-renewal validation completed.\n{{ close_notes | default('Validation passed.') }}[/code]"
+          work_notes: "[code]<h3>Post-Renewal Validation</h3><p>{{ close_notes | default('Validation passed.') | regex_replace('\n', '</p><p>') }}</p>[/code]"
       when: action == 'close'
       ignore_errors: true
 

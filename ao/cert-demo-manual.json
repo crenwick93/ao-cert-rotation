@@ -142,7 +142,7 @@
         "extra_vars": {
           "action": "close",
           "cr_sys_id": "${create_change_pem.artifacts.cr_sys_id}",
-          "close_notes": "PEM certificate renewed successfully.\nValidation: ${validate_pem.artifacts.validation_result}\nNew expiry: ${validate_pem.artifacts.cert_expiry}\nDays remaining: ${validate_pem.artifacts.cert_days_remaining}\nSubject: ${validate_pem.artifacts.cert_subject}"
+          "close_notes": "PEM certificate renewed successfully. Validation: ${validate_pem.artifacts.validation_result}. New expiry: ${validate_pem.artifacts.cert_expiry}. Days remaining: ${validate_pem.artifacts.cert_days_remaining}. Subject: ${validate_pem.artifacts.cert_subject}."
         }
       },
       "position": {
@@ -247,7 +247,7 @@
         "extra_vars": {
           "action": "close",
           "cr_sys_id": "${create_change_keystore.artifacts.cr_sys_id}",
-          "close_notes": "Java keystore certificate renewed successfully. Tomcat restarted.\nValidation: ${validate_keystore.artifacts.validation_result}\nNew expiry: ${validate_keystore.artifacts.cert_expiry}\nDays remaining: ${validate_keystore.artifacts.cert_days_remaining}\nSubject: ${validate_keystore.artifacts.cert_subject}"
+          "close_notes": "Java keystore certificate renewed successfully. Tomcat restarted. Validation: ${validate_keystore.artifacts.validation_result}. New expiry: ${validate_keystore.artifacts.cert_expiry}. Days remaining: ${validate_keystore.artifacts.cert_days_remaining}. Subject: ${validate_keystore.artifacts.cert_subject}."
         }
       },
       "position": {
