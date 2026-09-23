@@ -65,6 +65,12 @@ Splunk Cert Alert → Create SNOW Incident → AI Plan Renewal → Update Incide
 - Switch conditions: `${node.result.content.field} == 'value'`
 - Approval nodes use `from_port: "approved"` / `from_port: "rejected"` on outgoing edges
 
+### Deployment Order for EDA
+- Run CaC FIRST (creates cr-approval-bridge activation)
+- THEN manually configure the event stream + cert-alert-listener activation in EDA UI
+- Do NOT re-run CaC after configuring the event stream — it may disable it
+- If you must re-run CaC, re-enable the event stream + activation afterwards
+
 ### EDA Gotchas
 - EDA activations must NOT have event streams attached if using `servicenow.itsm.records` source
 - The EDA controller credential needs host URL with `/api/controller/` path suffix (AAP 2.5+)

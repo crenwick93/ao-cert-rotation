@@ -20,12 +20,7 @@
         - ansible.eda.normalize_keys:
   rules:
     - name: Cert alert received — trigger AO workflow
-      throttle:
-        once_within: 5 minutes
-        group_by_attributes:
-          - payload.host
-          - payload.service
-      condition: event.payload.cert_type is defined and event.payload.days_remaining is defined
+      condition: event.payload.payload.cert_type is defined and event.payload.payload.days_remaining is defined
       action:
         run_job_template:
           name: AO Workflow Bridge
@@ -35,11 +30,11 @@
             extra_vars:
               webhook_path: "{{ webhook_path }}"
               event_payload:
-                host: "{{ event.payload.host }}"
-                service: "{{ event.payload.service }}"
-                cert_type: "{{ event.payload.cert_type }}"
-                port: "{{ event.payload.port | default(443) }}"
-                status: "{{ event.payload.status | default('critical') }}"
-                days_remaining: "{{ event.payload.days_remaining }}"
-                expiry_date: "{{ event.payload.expiry_date | default('') }}"
-                issuer: "{{ event.payload.issuer | default('') }}"
+                host: "{{ event.payload.payload.host }}"
+                service: "{{ event.payload.payload.service }}"
+                cert_type: "{{ event.payload.payload.cert_type }}"
+                port: "{{ event.payload.payload.port | default(443) }}"
+                status: "{{ event.payload.payload.status | default('critical') }}"
+                days_remaining: "{{ event.payload.payload.days_remaining }}"
+                expiry_date: "{{ event.payload.payload.expiry_date | default('') }}"
+                issuer: "{{ event.payload.payload.issuer | default('') }}"

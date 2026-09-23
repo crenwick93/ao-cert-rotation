@@ -46,12 +46,12 @@ echo ""
 
 RESPONSE=$(curl -sk -X POST "${EDA_WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${AAP_TOKEN}" \
+  -H "Authorization: Bearer ${EDA_EVENT_STREAM_TOKEN}" \
   -d "${PAYLOAD}" \
-  -w "\n%{http_code}")
+  -w "\nHTTP_CODE:%{http_code}")
 
-HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
-BODY=$(echo "${RESPONSE}" | head -n -1)
+HTTP_CODE=$(echo "${RESPONSE}" | grep "HTTP_CODE:" | sed 's/HTTP_CODE://')
+BODY=$(echo "${RESPONSE}" | grep -v "HTTP_CODE:")
 
 if [[ "${HTTP_CODE}" == "200" || "${HTTP_CODE}" == "202" ]]; then
   echo "✅ Cert alert sent to EDA successfully (HTTP ${HTTP_CODE})"

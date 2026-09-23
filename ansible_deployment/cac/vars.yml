@@ -377,6 +377,7 @@ eda_event_streams:
     organization: "Default"
     credential_name: "Splunk Cert Alerts Token"
     event_stream_type: token
+    forward_events: true
     test_mode: false
 
 # -----------------------------------------------------------------------------
@@ -392,9 +393,9 @@ eda_rulebook_activations:
     enabled: true
     extra_vars:
       webhook_path: "{{ ao_webhook_path }}"
-    source_mappings:
-      - source_name: splunk_cert_alerts
-        event_stream_name: "Splunk Cert Alerts"
+    event_streams:
+      - event_stream: "Splunk Cert Alerts"
+        source_name: "splunk_cert_alerts"
     eda_credentials:
       - "AAP Controller Token"
 
