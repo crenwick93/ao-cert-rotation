@@ -134,8 +134,8 @@
     - name: Publish CR identifiers (standard)
       ansible.builtin.set_stats:
         data:
-          cr_sys_id: "{{ cr_std_result.record.sys_id }}"
-          cr_number: "{{ cr_std_result.record.number }}"
+          cr_sys_id: "{{ cr_std_result.record.sys_id.value | default(cr_std_result.record.sys_id) }}"
+          cr_number: "{{ cr_std_result.record.number.display_value | default(cr_std_result.record.number) }}"
         aggregate: false
       when: action == 'create_standard'
 
