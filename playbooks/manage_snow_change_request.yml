@@ -233,10 +233,10 @@
         number: "{{ item.number }}"
         state: closed
         close_code: successful
-        close_notes: "{{ close_notes | default('Completed by automated workflow.') }}"
+        close_notes: "{{ task_close_summary | default('Completed successfully.') }}"
         assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
         other:
-          work_notes: "[code]{{ close_notes | default('Completed by automated workflow.') }}[/code]"
+          description: "{{ task_descriptions[item.change_task_type | default(item.short_description | lower)] | default('Executed by Ansible Automation Platform.') }}"
       loop: "{{ open_tasks.records | default([]) }}"
       loop_control:
         label: "{{ item.number }} ({{ item.short_description | default('task') }})"

@@ -104,7 +104,12 @@
         "extra_vars": {
           "action": "close",
           "cr_sys_id": "${create_change_pem.artifacts.cr_sys_id}",
-          "close_notes": "Status: PEM certificate renewed successfully\nValidation: ${validate_pem.artifacts.validation_result}\nNew Expiry: ${validate_pem.artifacts.cert_expiry}\nDays Remaining: ${validate_pem.artifacts.cert_days_remaining}\nSubject: ${validate_pem.artifacts.cert_subject}\nRenewal Job: https://aaponprem.chrislab.dev/execution/jobs/playbook/${renew_pem.artifacts.renewal_job_id}/output\nValidation Job: https://aaponprem.chrislab.dev/execution/jobs/playbook/${validate_pem.artifacts.validation_job_id}/output"
+          "close_notes": "Status: PEM certificate renewed successfully\nValidation: ${validate_pem.artifacts.validation_result}\nNew Expiry: ${validate_pem.artifacts.cert_expiry}\nDays Remaining: ${validate_pem.artifacts.cert_days_remaining}\nSubject: ${validate_pem.artifacts.cert_subject}",
+          "task_close_summary": "Validation: ${validate_pem.artifacts.validation_result}. New expiry: ${validate_pem.artifacts.cert_expiry}. Days remaining: ${validate_pem.artifacts.cert_days_remaining}.",
+          "task_descriptions": {
+            "implementation": "Certificate renewed by AAP.\nJob output: https://aaponprem.chrislab.dev/execution/jobs/playbook/${renew_pem.artifacts.renewal_job_id}/output",
+            "testing": "Post-renewal TLS validation by AAP.\nJob output: https://aaponprem.chrislab.dev/execution/jobs/playbook/${validate_pem.artifacts.validation_job_id}/output"
+          }
         }
       },
       "position": { "x": 3000, "y": 150 }
@@ -192,7 +197,12 @@
         "extra_vars": {
           "action": "close",
           "cr_sys_id": "${create_change_keystore.artifacts.cr_sys_id}",
-          "close_notes": "Status: Java keystore certificate renewed successfully (Tomcat restarted)\nValidation: ${validate_keystore.artifacts.validation_result}\nNew Expiry: ${validate_keystore.artifacts.cert_expiry}\nDays Remaining: ${validate_keystore.artifacts.cert_days_remaining}\nSubject: ${validate_keystore.artifacts.cert_subject}\nRenewal Job: https://aaponprem.chrislab.dev/execution/jobs/playbook/${renew_keystore.artifacts.renewal_job_id}/output\nValidation Job: https://aaponprem.chrislab.dev/execution/jobs/playbook/${validate_keystore.artifacts.validation_job_id}/output"
+          "close_notes": "Status: Java keystore certificate renewed successfully (Tomcat restarted)\nValidation: ${validate_keystore.artifacts.validation_result}\nNew Expiry: ${validate_keystore.artifacts.cert_expiry}\nDays Remaining: ${validate_keystore.artifacts.cert_days_remaining}\nSubject: ${validate_keystore.artifacts.cert_subject}",
+          "task_close_summary": "Validation: ${validate_keystore.artifacts.validation_result}. New expiry: ${validate_keystore.artifacts.cert_expiry}. Days remaining: ${validate_keystore.artifacts.cert_days_remaining}.",
+          "task_descriptions": {
+            "implementation": "Java keystore certificate renewed by AAP. Tomcat restarted.\nJob output: https://aaponprem.chrislab.dev/execution/jobs/playbook/${renew_keystore.artifacts.renewal_job_id}/output",
+            "testing": "Post-renewal TLS validation by AAP.\nJob output: https://aaponprem.chrislab.dev/execution/jobs/playbook/${validate_keystore.artifacts.validation_job_id}/output"
+          }
         }
       },
       "position": { "x": 4200, "y": 650 }
