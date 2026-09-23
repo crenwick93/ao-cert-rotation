@@ -112,14 +112,13 @@
 
     - name: Create standard Change Request via REST API
       servicenow.itsm.api:
-        resource: sn_chg_rest/change/standard/{{ _template_producer_id }}
+        api_path: /api/sn_chg_rest/change/standard/{{ _template_producer_id }}
         action: post
         data:
           short_description: "{{ short_description }}"
           description: "{{ description | default('') }}"
           assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
           cmdb_ci: "{{ _cmdb_ci | default(omit) }}"
-          justification: "{{ justification | default('Automated certificate renewal.') }}"
       register: cr_std_result
       when: action == 'create_standard'
 
