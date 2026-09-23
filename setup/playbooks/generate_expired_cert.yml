@@ -1,12 +1,10 @@
 ---
 # Generate near-expiry certificates for demo reset.
 #
-# Issues certificates from Vault with ~5 days remaining,
-# installs them for both nginx (PEM) and Tomcat (keystore),
-# triggering the Splunk alert (days_remaining <= 7).
-#
 # Usage:
 #   ansible-playbook -i setup/playbooks/inventory/hosts.yml setup/playbooks/generate_expired_cert.yml
+#   ansible-playbook ... --tags pem         # nginx only
+#   ansible-playbook ... --tags keystore    # Tomcat only
 
 - name: Generate Near-Expiry Certificates (Demo Reset)
   hosts: all
@@ -22,173 +20,134 @@
     keystore_password: changeit
 
   tasks:
-    - name: Display reset info
-      ansible.builtin.debug:
-        msg: |
-          === Demo Reset ===
-          Generating certs with TTL={{ near_expiry_ttl }} (~5 days remaining)
-          This will trigger the Splunk alert (days_remaining <= 7)
+    # ── PEM cert (nginx) ────────────────────────────────────────
+    - name: Expire PEM certificate (nginx)
+      tags: [pem, always_show]
+      block:
+        - name: Issue near-expiry PEM certificate
+          ansible.builtin.uri:
+            url: "{{ vault_addr }}/v1/pki/issue/cert-demo"
+            method: POST
+            headers:
+              X-Vault-Token: "{{ vault_token }}"
+            body_format: json
+            body:
+              common_name: "{{ cert_domain }}"
+              ttl: "{{ near_expiry_ttl }}"
+              ip_sans: "{{ ansible_default_ipv4.address }},127.0.0.1"
+            return_content: true
+          register: nginx_cert
 
-    # ── Issue near-expiry cert for nginx ────────────────────────
-    - name: Issue near-expiry certificate for nginx
-      ansible.builtin.uri:
-        url: "{{ vault_addr }}/v1/pki/issue/cert-demo"
-        method: POST
-        headers:
-          X-Vault-Token: "{{ vault_token }}"
-        body_format: json
-        body:
-          common_name: "{{ cert_domain }}"
-          ttl: "{{ near_expiry_ttl }}"
-          ip_sans: "{{ ansible_default_ipv4.address }},127.0.0.1"
-        return_content: true
-        status_code: [200]
-      register: nginx_cert
+        - name: Install near-expiry nginx certificate
+          ansible.builtin.copy:
+            content: "{{ nginx_cert.json.data.certificate }}"
+            dest: /etc/pki/tls/certs/server.crt
+            mode: "0644"
 
-    - name: Install near-expiry nginx certificate
-      ansible.builtin.copy:
-        content: "{{ nginx_cert.json.data.certificate }}"
-        dest: /etc/pki/tls/certs/server.crt
-        mode: "0644"
-      notify: Reload nginx
+        - name: Install near-expiry nginx key
+          ansible.builtin.copy:
+            content: "{{ nginx_cert.json.data.private_key }}"
+            dest: /etc/pki/tls/private/server.key
+            mode: "0600"
 
-    - name: Install near-expiry nginx private key
-      ansible.builtin.copy:
-        content: "{{ nginx_cert.json.data.private_key }}"
-        dest: /etc/pki/tls/private/server.key
-        mode: "0600"
-      notify: Reload nginx
+        - name: Reload nginx
+          ansible.builtin.systemd:
+            name: nginx
+            state: reloaded
 
-    # ── Issue near-expiry cert for Tomcat ───────────────────────
-    - name: Issue near-expiry certificate for API server
-      ansible.builtin.uri:
-        url: "{{ vault_addr }}/v1/pki/issue/cert-demo"
-        method: POST
-        headers:
-          X-Vault-Token: "{{ vault_token }}"
-        body_format: json
-        body:
-          common_name: "{{ cert_domain }}"
-          ttl: "{{ near_expiry_ttl }}"
-          ip_sans: "{{ ansible_default_ipv4.address }},127.0.0.1"
-        return_content: true
-        status_code: [200]
-      register: tomcat_cert
+        - name: Show PEM result
+          ansible.builtin.debug:
+            msg: "nginx PEM cert now expires in ~5 days"
 
-    - name: Save temporary PEM files for keystore import
-      ansible.builtin.copy:
-        content: "{{ item.content }}"
-        dest: "{{ item.dest }}"
-        mode: "{{ item.mode }}"
-      loop:
-        - { content: "{{ tomcat_cert.json.data.certificate }}", dest: "/tmp/api-server.crt", mode: "0644" }
-        - { content: "{{ tomcat_cert.json.data.private_key }}", dest: "/tmp/api-server.key", mode: "0600" }
+    # ── Keystore cert (Tomcat) ──────────────────────────────────
+    - name: Expire keystore certificate (Tomcat)
+      tags: [keystore, always_show]
+      block:
+        - name: Issue near-expiry keystore certificate
+          ansible.builtin.uri:
+            url: "{{ vault_addr }}/v1/pki/issue/cert-demo"
+            method: POST
+            headers:
+              X-Vault-Token: "{{ vault_token }}"
+            body_format: json
+            body:
+              common_name: "{{ cert_domain }}"
+              ttl: "{{ near_expiry_ttl }}"
+              ip_sans: "{{ ansible_default_ipv4.address }},127.0.0.1"
+            return_content: true
+          register: tomcat_cert
 
-    - name: Create PKCS12 bundle
-      ansible.builtin.command:
-        cmd: >
-          openssl pkcs12 -export
-          -in /tmp/api-server.crt
-          -inkey /tmp/api-server.key
-          -out /tmp/api-server.p12
-          -name tomcat
-          -passout pass:{{ keystore_password }}
-      changed_when: true
+        - name: Save temp PEM files
+          ansible.builtin.copy:
+            content: "{{ item.content }}"
+            dest: "{{ item.dest }}"
+            mode: "{{ item.mode }}"
+          loop:
+            - { content: "{{ tomcat_cert.json.data.certificate }}", dest: "/tmp/api-server.crt", mode: "0644" }
+            - { content: "{{ tomcat_cert.json.data.private_key }}", dest: "/tmp/api-server.key", mode: "0600" }
 
-    - name: Remove existing keystore
-      ansible.builtin.file:
-        path: "{{ keystore_path }}"
-        state: absent
+        - name: Create PKCS12 bundle
+          ansible.builtin.command:
+            cmd: >
+              openssl pkcs12 -export
+              -in /tmp/api-server.crt -inkey /tmp/api-server.key
+              -out /tmp/api-server.p12 -name tomcat
+              -passout pass:{{ keystore_password }}
+          changed_when: true
 
-    - name: Import PKCS12 into Java keystore
-      ansible.builtin.command:
-        cmd: >
-          keytool -importkeystore
-          -srckeystore /tmp/api-server.p12
-          -srcstoretype PKCS12
-          -srcstorepass {{ keystore_password }}
-          -destkeystore {{ keystore_path }}
-          -deststoretype JKS
-          -deststorepass {{ keystore_password }}
-          -alias tomcat
-          -noprompt
-      changed_when: true
+        - name: Remove existing keystore
+          ansible.builtin.file:
+            path: "{{ keystore_path }}"
+            state: absent
 
-    - name: Get CA cert for keystore
-      ansible.builtin.uri:
-        url: "{{ vault_addr }}/v1/pki/ca/pem"
-        method: GET
-        return_content: true
-        status_code: [200]
-      register: ca_cert
+        - name: Import PKCS12 into keystore
+          ansible.builtin.command:
+            cmd: >
+              keytool -importkeystore
+              -srckeystore /tmp/api-server.p12 -srcstoretype PKCS12
+              -srcstorepass {{ keystore_password }}
+              -destkeystore {{ keystore_path }} -deststoretype JKS
+              -deststorepass {{ keystore_password }} -alias tomcat -noprompt
+          changed_when: true
 
-    - name: Save CA cert
-      ansible.builtin.copy:
-        content: "{{ ca_cert.content }}"
-        dest: /tmp/vault-ca.pem
-        mode: "0644"
+        - name: Get CA cert
+          ansible.builtin.uri:
+            url: "{{ vault_addr }}/v1/pki/ca/pem"
+            return_content: true
+          register: ca_cert
 
-    - name: Import CA cert into keystore
-      ansible.builtin.command:
-        cmd: >
-          keytool -importcert
-          -keystore {{ keystore_path }}
-          -storepass {{ keystore_password }}
-          -alias vault-ca
-          -file /tmp/vault-ca.pem
-          -noprompt
-      changed_when: true
+        - name: Import CA cert into keystore
+          ansible.builtin.command:
+            cmd: >
+              keytool -importcert -keystore {{ keystore_path }}
+              -storepass {{ keystore_password }} -alias vault-ca
+              -file /tmp/vault-ca.pem -noprompt
+          changed_when: true
 
-    - name: Set keystore ownership
-      ansible.builtin.file:
-        path: "{{ keystore_path }}"
-        owner: tomcat
-        group: tomcat
-        mode: "0640"
+        - name: Save CA cert
+          ansible.builtin.copy:
+            content: "{{ ca_cert.content }}"
+            dest: /tmp/vault-ca.pem
+            mode: "0644"
 
-    - name: Restart Tomcat to pick up new keystore
-      ansible.builtin.systemd:
-        name: tomcat
-        state: restarted
+        - name: Set keystore ownership
+          ansible.builtin.file:
+            path: "{{ keystore_path }}"
+            owner: tomcat
+            group: tomcat
+            mode: "0640"
 
-    - name: Clean up temp files
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /tmp/api-server.crt
-        - /tmp/api-server.key
-        - /tmp/api-server.p12
-        - /tmp/vault-ca.pem
+        - name: Restart Tomcat
+          ansible.builtin.systemd:
+            name: tomcat
+            state: restarted
 
-    # ── Verify ──────────────────────────────────────────────────
-    - name: Check nginx cert expiry
-      ansible.builtin.command:
-        cmd: >
-          openssl s_client -connect localhost:443 -servername {{ cert_domain }}
-      register: nginx_check
-      changed_when: false
-      failed_when: false
+        - name: Clean up temp files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop: [/tmp/api-server.crt, /tmp/api-server.key, /tmp/api-server.p12, /tmp/vault-ca.pem]
 
-    - name: Check Tomcat cert expiry
-      ansible.builtin.command:
-        cmd: >
-          openssl s_client -connect localhost:8443 -servername {{ cert_domain }}
-      register: tomcat_check
-      changed_when: false
-      failed_when: false
-
-    - name: Display reset summary
-      ansible.builtin.debug:
-        msg: |
-          === Demo Reset Complete ===
-          Both certificates now have ~5 days remaining.
-          The cron-based cert monitor will detect this within 1 minute
-          and push events to Splunk. The Splunk alert (days_remaining <= 7)
-          will fire within 4 minutes and trigger the AO workflow.
-
-  handlers:
-    - name: Reload nginx
-      ansible.builtin.systemd:
-        name: nginx
-        state: reloaded
+        - name: Show keystore result
+          ansible.builtin.debug:
+            msg: "Tomcat keystore cert now expires in ~5 days"

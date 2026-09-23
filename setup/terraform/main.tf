@@ -128,7 +128,7 @@ resource "aws_instance" "demo" {
   associate_public_ip_address = true
 
   root_block_device {
-    volume_size = 20
+    volume_size = 40
     volume_type = "gp3"
   }
 
