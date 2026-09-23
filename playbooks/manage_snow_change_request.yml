@@ -203,6 +203,24 @@
         fail_msg: "cr_sys_id must be provided for close action"
       when: action == 'close'
 
+    - name: Progress CR to Implement
+      servicenow.itsm.change_request:
+        sys_id: "{{ cr_sys_id }}"
+        state: implement
+        other:
+          work_notes: "[code][AUTOMATED] Certificate renewal executed by AAP.\nJob: {{ renewal_job_id | default('N/A') }}\nPlaybook: {{ renewal_playbook | default('N/A') }}\nCert Domain: {{ cert_domain | default('N/A') }}[/code]"
+      when: action == 'close'
+      ignore_errors: true
+
+    - name: Progress CR to Review
+      servicenow.itsm.change_request:
+        sys_id: "{{ cr_sys_id }}"
+        state: review
+        other:
+          work_notes: "[code][AUTOMATED] Post-renewal validation completed.\n{{ close_notes | default('Validation passed.') }}[/code]"
+      when: action == 'close'
+      ignore_errors: true
+
     - name: Close CR
       servicenow.itsm.change_request:
         sys_id: "{{ cr_sys_id }}"
