@@ -4,9 +4,9 @@
   "description": "ITIL-correct certificate renewal: Splunk detects near-expiry certs, a standard change is raised per cert type (pre-approved for non-invasive reloads, approval required for restarts), AAP renews and validates TLS. An incident is only created if renewal fails.",
   "triggers": [
     {
-      "id": "trigger_webhook",
-      "type": "webhook_trigger",
-      "name": "Splunk Cert Alert",
+      "id": "trigger_eda",
+      "type": "eda_trigger",
+      "name": "Splunk Cert Alert (via EDA)",
       "parameters": {
         "input_schema": {
           "type": "object",
@@ -215,7 +215,7 @@
     }
   ],
   "edges": [
-    { "from": "trigger_webhook", "to": "cert_type_switch" },
+    { "from": "trigger_eda", "to": "cert_type_switch" },
 
     { "from": "cert_type_switch", "to": "create_change_pem", "from_port": "case_pem" },
     { "from": "create_change_pem", "to": "renew_pem" },
