@@ -351,6 +351,15 @@ eda_credentials:
       oauth_token: "{{ aap_token }}"
       verify_ssl: false
 
+  - name: "Splunk Cert Alerts Token"
+    description: "Token auth for Splunk cert alert webhook events"
+    credential_type: "Token Event Stream"
+    organization: "Default"
+    inputs:
+      auth_type: token
+      token: "{{ eda_event_stream_token }}"
+      http_header_key: Authorization
+
   - name: "ServiceNow EDA"
     description: "ServiceNow credentials for EDA records source plugin (CR polling)"
     credential_type: "ServiceNow Credential"
@@ -363,23 +372,31 @@ eda_credentials:
 # -----------------------------------------------------------------------------
 # EDA Event Streams
 # -----------------------------------------------------------------------------
-# The "Splunk Cert Alerts" event stream must be created manually in the
-# AAP EDA UI (Event Streams → Create). CaC cannot reliably create event
-# streams due to credential type dependencies.
-# After creating the event stream, map it to the cert-alert-listener
-# activation's __SOURCE_1 in the activation settings.
+eda_event_streams:
+  - name: "Splunk Cert Alerts"
+    organization: "Default"
+    credential_name: "Splunk Cert Alerts Token"
+    event_stream_type: token
+    test_mode: false
 
 # -----------------------------------------------------------------------------
 # Rulebook Activations
 # -----------------------------------------------------------------------------
 eda_rulebook_activations:
-  # NOTE: cert-alert-listener must be created manually in AAP EDA UI
-  # because it requires an event stream mapping that CaC cannot handle.
-  # Create it with:
-  #   - Rulebook: cert_alert_listener.yml
-  #   - Event stream: Splunk Cert Alerts → __SOURCE_1
-  #   - Credentials: AAP Controller Token
-  #   - Extra vars: webhook_path: <your AO webhook path>
+  - name: "cert-alert-listener"
+    description: "Receives Splunk cert alerts via event stream, triggers AO workflow"
+    organization: "Default"
+    project: "Cert Rotation Demo"
+    rulebook: "cert_alert_listener.yml"
+    decision_environment: "ServiceNow DE"
+    enabled: true
+    extra_vars:
+      webhook_path: "{{ ao_webhook_path }}"
+    source_mappings:
+      - source_name: splunk_cert_alerts
+        event_stream_name: "Splunk Cert Alerts"
+    eda_credentials:
+      - "AAP Controller Token"
 
   - name: "cert-cr-approval-bridge"
     description: "Polls SNOW CRs for cert renewal approval, bridges to AO approval gate"

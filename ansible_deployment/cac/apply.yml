@@ -60,6 +60,9 @@
     aws_access_key_id: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') | default('placeholder', true) }}"
     aws_secret_access_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') | default('placeholder', true) }}"
 
+    # EDA event stream token (for Splunk webhook authentication)
+    eda_event_stream_token: "{{ lookup('env', 'EDA_EVENT_STREAM_TOKEN') | default('changeme', true) }}"
+
   vars_files:
     - vars.yml
   roles:
