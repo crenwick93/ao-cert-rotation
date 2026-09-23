@@ -104,7 +104,7 @@
         "extra_vars": {
           "action": "close",
           "cr_sys_id": "${create_change_pem.artifacts.cr_sys_id}",
-          "close_notes": "PEM certificate renewed successfully. Validation: ${validate_pem.artifacts.validation_result}. New expiry: ${validate_pem.artifacts.cert_expiry}. Days remaining: ${validate_pem.artifacts.cert_days_remaining}. Subject: ${validate_pem.artifacts.cert_subject}."
+          "close_notes": "PEM certificate renewed successfully. Validation: ${validate_pem.artifacts.validation_result}. New expiry: ${validate_pem.artifacts.cert_expiry}. Days remaining: ${validate_pem.artifacts.cert_days_remaining}. Subject: ${validate_pem.artifacts.cert_subject}. Renewal job: https://aaponprem.chrislab.dev/#/jobs/${renew_pem.artifacts.renewal_job_id}/output. Validation job: https://aaponprem.chrislab.dev/#/jobs/${validate_pem.artifacts.validation_job_id}/output."
         }
       },
       "position": { "x": 3000, "y": 150 }
@@ -192,7 +192,7 @@
         "extra_vars": {
           "action": "close",
           "cr_sys_id": "${create_change_keystore.artifacts.cr_sys_id}",
-          "close_notes": "Java keystore certificate renewed successfully. Tomcat restarted. Validation: ${validate_keystore.artifacts.validation_result}. New expiry: ${validate_keystore.artifacts.cert_expiry}. Days remaining: ${validate_keystore.artifacts.cert_days_remaining}. Subject: ${validate_keystore.artifacts.cert_subject}."
+          "close_notes": "Java keystore certificate renewed successfully. Tomcat restarted. Validation: ${validate_keystore.artifacts.validation_result}. New expiry: ${validate_keystore.artifacts.cert_expiry}. Days remaining: ${validate_keystore.artifacts.cert_days_remaining}. Subject: ${validate_keystore.artifacts.cert_subject}. Renewal job: https://aaponprem.chrislab.dev/#/jobs/${renew_keystore.artifacts.renewal_job_id}/output. Validation job: https://aaponprem.chrislab.dev/#/jobs/${validate_keystore.artifacts.validation_job_id}/output."
         }
       },
       "position": { "x": 4200, "y": 650 }

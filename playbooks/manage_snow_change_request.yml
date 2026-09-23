@@ -221,6 +221,28 @@
       when: action == 'close'
       ignore_errors: true
 
+    # ── Close change tasks before closing CR ────────────────────
+    - name: Find change tasks for this CR
+      servicenow.itsm.change_request_task_info:
+        sysparm_query: "change_request={{ cr_sys_id }}^state!=3"
+      register: open_tasks
+      when: action == 'close'
+
+    - name: Close implementation tasks
+      servicenow.itsm.change_request_task:
+        number: "{{ item.number }}"
+        state: closed
+        close_code: successful
+        close_notes: "{{ close_notes | default('Completed by automated workflow.') }}"
+        assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
+      loop: "{{ open_tasks.records | default([]) }}"
+      loop_control:
+        label: "{{ item.number }} ({{ item.short_description | default('task') }})"
+      when:
+        - action == 'close'
+        - item.state != '3'
+      ignore_errors: true
+
     - name: Progress CR to Review
       servicenow.itsm.change_request:
         sys_id: "{{ cr_sys_id }}"

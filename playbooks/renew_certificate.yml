@@ -101,4 +101,5 @@
           renewal_cert_type: "pem"
           new_expiry: "{{ new_expiry.stdout }}"
           cert_domain: "{{ cert_domain }}"
+          renewal_job_id: "{{ lookup('env', 'JOB_ID') | default('unknown') }}"
         aggregate: false

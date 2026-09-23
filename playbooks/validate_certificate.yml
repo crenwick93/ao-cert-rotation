@@ -101,4 +101,5 @@
           cert_expiry: "{{ cert_expiry.stdout }}"
           cert_days_remaining: "{{ days_remaining.stdout }}"
           validation_port: "{{ validation_port }}"
+          validation_job_id: "{{ lookup('env', 'JOB_ID') | default('unknown') }}"
         aggregate: false
