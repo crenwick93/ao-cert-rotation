@@ -9,7 +9,7 @@ Run these commands **before** the audience arrives:
 ./scripts/demo-reset.sh
 
 # 2. Expire the PEM cert (nginx) — ~5 days remaining
-./scripts/expire-pem.sh
+./scripts/shorten-pem-cert.sh
 
 # 3. Wait ~2 minutes for the cron to push data and the Splunk alert to fire
 # Verify at http://63.32.42.56:8000 → Alerts → Certificate Expiry Alert → Triggered Alerts
@@ -91,7 +91,7 @@ index=main sourcetype=cert_monitor | table _time service cert_type days_remainin
 > "Now let's expire the API server's keystore certificate."
 
 ```bash
-./scripts/expire-keystore.sh
+./scripts/shorten-keystore-cert.sh
 ```
 
 **SSH:**
@@ -148,8 +148,8 @@ echo | openssl s_client -connect localhost:8443 -servername certdemo.demoredhat.
 ./scripts/demo-reset.sh
 
 # Expire certs
-./scripts/expire-pem.sh
-./scripts/expire-keystore.sh
+./scripts/shorten-pem-cert.sh
+./scripts/shorten-keystore-cert.sh
 
 # Trigger workflows via EDA
 ./scripts/test-trigger.sh            # PEM
