@@ -81,19 +81,29 @@
         fail_msg: "short_description must be provided for create_standard"
       when: action == 'create_standard'
 
-    - name: Create standard Change Request
-      servicenow.itsm.change_request:
-        type: standard
-        state: new
-        short_description: "{{ short_description }}"
-        description: "{{ description | default(omit) }}"
-        priority: "{{ cr_priority | default(3) }}"
-        risk: "{{ cr_risk | default('low') }}"
-        impact: "{{ cr_impact | default(3) }}"
-        category: "{{ cr_category | default('Software') }}"
-        assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
-        other:
-          std_change_producer_version: "{{ change_template_id | default(omit) }}"
+    - name: Look up standard change template producer
+      servicenow.itsm.api_info:
+        resource: std_change_record_producer
+        sysparm_query: "nameLIKE{{ change_template_name | default('Reboot Windows Server') }}"
+        columns: "sys_id,name"
+      register: template_lookup
+      when:
+        - action == 'create_standard'
+        - change_template_id is not defined
+
+    - name: Set template producer ID
+      ansible.builtin.set_fact:
+        _template_producer_id: "{{ change_template_id | default(template_lookup.record[0].sys_id) }}"
+      when: action == 'create_standard'
+
+    - name: Create standard Change Request via REST API
+      servicenow.itsm.api:
+        resource: sn_chg_rest/change/standard/{{ _template_producer_id }}
+        action: post
+        data:
+          short_description: "{{ short_description }}"
+          description: "{{ description | default('') }}"
+          assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
           justification: "{{ justification | default('Automated certificate renewal.') }}"
           implementation_plan: "{{ implementation_plan | default('Automated by Ansible Automation Platform.') }}"
           backout_plan: "{{ backout_plan | default('Restore certificate from backup and reload/restart service.') }}"
