@@ -1,0 +1,44 @@
+---
+# EDA rulebook: Splunk cert expiry alert listener.
+#
+# Receives webhook events from Splunk (via Event Stream) when certificates
+# are within 7 days of expiry. Triggers the AO cert lifecycle workflow
+# via the bridge playbook.
+#
+# The ansible.eda.webhook source is replaced by an Event Stream at
+# activation time in the AAP UI. The rules and filters remain intact.
+
+- name: Cert Expiry Alert Listener
+  hosts: all
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5000
+      filters:
+        - ansible.eda.json_filter:
+        - ansible.eda.normalize_keys:
+  rules:
+    - name: Cert alert received — trigger AO workflow
+      throttle:
+        once_within: 5 minutes
+        group_by_attributes:
+          - payload.host
+          - payload.service
+      condition: event.payload.cert_type is defined and event.payload.days_remaining is defined
+      action:
+        run_job_template:
+          name: AO Workflow Bridge
+          organization: Default
+          post_events: true
+          job_args:
+            extra_vars:
+              webhook_path: "{{ webhook_path }}"
+              event_payload:
+                host: "{{ event.payload.host }}"
+                service: "{{ event.payload.service }}"
+                cert_type: "{{ event.payload.cert_type }}"
+                port: "{{ event.payload.port | default(443) }}"
+                status: "{{ event.payload.status | default('critical') }}"
+                days_remaining: "{{ event.payload.days_remaining }}"
+                expiry_date: "{{ event.payload.expiry_date | default('') }}"
+                issuer: "{{ event.payload.issuer | default('') }}"

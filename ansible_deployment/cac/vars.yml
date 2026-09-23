@@ -333,7 +333,7 @@ eda_decision_environments:
 # -----------------------------------------------------------------------------
 eda_projects:
   - name: "Cert Rotation Demo"
-    description: "EDA rulebook for ServiceNow CR approval bridging"
+    description: "EDA rulebooks for cert alert listening and SNOW CR approval bridging"
     organization: "Default"
     url: "{{ git_repo_url }}"
     wait: true
@@ -361,14 +361,38 @@ eda_credentials:
       SN_PASSWORD: "{{ sn_password }}"
 
 # -----------------------------------------------------------------------------
+# EDA Event Streams
+# -----------------------------------------------------------------------------
+eda_event_streams:
+  - name: "Splunk Cert Alerts"
+    description: "Receives webhook events from Splunk when certs are near expiry"
+    organization: "Default"
+    credential_type: "Basic Event Stream"
+
+# -----------------------------------------------------------------------------
 # Rulebook Activations
 # -----------------------------------------------------------------------------
 eda_rulebook_activations:
-  - name: "cert-rotation-cr-bridge"
-    description: "Monitors SNOW CRs for cert renewal approval — bridges to AO approval gate"
+  - name: "cert-alert-listener"
+    description: "Receives Splunk cert alerts via event stream, triggers AO workflow"
     organization: "Default"
     project: "Cert Rotation Demo"
-    rulebook: "cert_rotation_rulebook.yml"
+    rulebook: "cert_alert_listener.yml"
+    decision_environment: "ServiceNow DE"
+    enabled: true
+    extra_vars:
+      webhook_path: "{{ ao_webhook_path }}"
+    event_streams:
+      - name: "Splunk Cert Alerts"
+        source_name: "__SOURCE_1"
+    eda_credentials:
+      - "AAP Controller Token"
+
+  - name: "cert-cr-approval-bridge"
+    description: "Polls SNOW CRs for cert renewal approval, bridges to AO approval gate"
+    organization: "Default"
+    project: "Cert Rotation Demo"
+    rulebook: "cert_cr_approval_bridge.yml"
     decision_environment: "ServiceNow DE"
     enabled: true
     extra_vars:
