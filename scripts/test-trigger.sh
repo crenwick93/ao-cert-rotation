@@ -2,7 +2,8 @@
 set -eo pipefail
 
 # Simulate a Splunk cert expiry alert via the EDA event stream.
-# Authenticates with AO, then posts to the EDA trigger endpoint.
+# Posts to the EDA event stream webhook, which the rulebook matches
+# and forwards to AO to trigger the cert rotation workflow.
 #
 # Usage:
 #   ./scripts/test-trigger.sh                    # PEM cert (nginx)
@@ -18,9 +19,9 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
   set +a
 fi
 
-if [[ -z "${AO_WEBHOOK_BASE_URL:-}" || -z "${AO_WEBHOOK_PATH:-}" || -z "${AO_WEBHOOK_CLIENT_ID:-}" || -z "${AO_WEBHOOK_CLIENT_SECRET:-}" ]]; then
-  echo "ERROR: AO webhook credentials not set in .env"
-  echo "Required: AO_WEBHOOK_BASE_URL, AO_WEBHOOK_PATH, AO_WEBHOOK_CLIENT_ID, AO_WEBHOOK_CLIENT_SECRET"
+if [[ -z "${EDA_WEBHOOK_URL:-}" || -z "${EDA_EVENT_STREAM_TOKEN:-}" ]]; then
+  echo "ERROR: EDA event stream credentials not set in .env"
+  echo "Required: EDA_WEBHOOK_URL, EDA_EVENT_STREAM_TOKEN"
   exit 1
 fi
 
@@ -39,15 +40,18 @@ fi
 
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
 
+# Wrap in {"payload": {...}} — EDA event streams deliver as event.payload.payload
 PAYLOAD='{
-  "host": "'"${CERT_DOMAIN}"'",
-  "service": "'"${SERVICE}"'",
-  "cert_type": "'"${CERT_TYPE}"'",
-  "port": '"${PORT}"',
-  "status": "critical",
-  "days_remaining": 5,
-  "expiry_date": "'"${TIMESTAMP}"'",
-  "issuer": "Demo Certificate Authority"
+  "payload": {
+    "host": "'"${CERT_DOMAIN}"'",
+    "service": "'"${SERVICE}"'",
+    "cert_type": "'"${CERT_TYPE}"'",
+    "port": '"${PORT}"',
+    "status": "critical",
+    "days_remaining": 5,
+    "expiry_date": "'"${TIMESTAMP}"'",
+    "issuer": "Demo Certificate Authority"
+  }
 }'
 
 echo "============================================================"
@@ -60,37 +64,31 @@ echo "  Port:     ${PORT}"
 echo "  Cert:     ${CERT_TYPE}"
 echo "  Days:     5"
 echo ""
-echo "  Target:   AO EDA Trigger"
+echo "  Target:   EDA Event Stream → Rulebook → AO Workflow"
 echo "------------------------------------------------------------"
 echo ""
 
-# Step 1: Get OAuth token
-echo "  Authenticating with AO..."
-TOKEN=$(curl -sS -k -X POST "${AO_WEBHOOK_BASE_URL}/api/v1/auth/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=client_credentials&client_id=${AO_WEBHOOK_CLIENT_ID}&client_secret=${AO_WEBHOOK_CLIENT_SECRET}" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-
-# Step 2: Post to AO EDA trigger
-echo "  Sending event to AO..."
+echo "  Sending event to EDA event stream..."
 echo ""
 
-HTTP_CODE=$(curl -sS -k -o /tmp/ao-response.txt -w "%{http_code}" -X POST "${AO_WEBHOOK_BASE_URL}/api/v1/webhooks/eda/${AO_WEBHOOK_PATH}" \
-  -H "Authorization: Bearer ${TOKEN}" \
+HTTP_CODE=$(curl -sS -k -o /tmp/eda-response.txt -w "%{http_code}" -X POST "${EDA_WEBHOOK_URL}" \
+  -H "Authorization: ${EDA_EVENT_STREAM_TOKEN}" \
   -H "Content-Type: application/json" \
   -d "${PAYLOAD}")
 
-BODY=$(cat /tmp/ao-response.txt 2>/dev/null)
+BODY=$(cat /tmp/eda-response.txt 2>/dev/null)
 
 if [[ "${HTTP_CODE}" == "200" || "${HTTP_CODE}" == "202" ]]; then
-  echo "  Event accepted (HTTP ${HTTP_CODE})"
+  echo "  Event accepted by EDA (HTTP ${HTTP_CODE})"
   echo ""
   echo "============================================================"
-  echo "  AO workflow triggered:"
-  echo "    1. Switch → ${CERT_TYPE} path"
-  echo "    2. Standard Change → Renew → Validate → Close"
+  echo "  EDA will match the rulebook and trigger AO:"
+  echo "    1. Rulebook matches cert_type=${CERT_TYPE}"
+  echo "    2. AO workflow triggers → ${CERT_TYPE} path"
+  echo "    3. Standard Change → Renew → Validate → Close"
   echo ""
   echo "  Monitor progress:"
+  echo "    EDA:  Check rulebook activation history"
   echo "    AAP:  ${AAP_HOSTNAME:-https://your-aap} > Jobs"
   echo "    AO:   Check workflow executions"
   echo "    SNOW: Check for new change request"
