@@ -116,6 +116,12 @@
             return_content: true
           register: ca_cert
 
+        - name: Save CA cert
+          ansible.builtin.copy:
+            content: "{{ ca_cert.content }}"
+            dest: /tmp/vault-ca.pem
+            mode: "0644"
+
         - name: Import CA cert into keystore
           ansible.builtin.command:
             cmd: >
@@ -123,12 +129,6 @@
               -storepass {{ keystore_password }} -alias vault-ca
               -file /tmp/vault-ca.pem -noprompt
           changed_when: true
-
-        - name: Save CA cert
-          ansible.builtin.copy:
-            content: "{{ ca_cert.content }}"
-            dest: /tmp/vault-ca.pem
-            mode: "0644"
 
         - name: Set keystore ownership
           ansible.builtin.file:
