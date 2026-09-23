@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0.0",
-  "name": "Intelligent Cert Lifecycle (Manual)",
+  "name": "Cert Lifecycle (Manual)",
   "description": "Manual-trigger version for live demos.",
   "triggers": [
     {
@@ -54,59 +54,6 @@
   ],
   "nodes": [
     {
-      "id": "ai_assess",
-      "type": "agentic",
-      "name": "AI: Assess & Recommend",
-      "parameters": {
-        "model": "claude-sonnet-4-6",
-        "prompt": "You are a certificate lifecycle management expert. Analyze the following certificate expiry alert and assess the risk.\n\n## Alert Details\n- Host: ${trigger.host}\n- Service: ${trigger.service}\n- Port: ${trigger.port}\n- Certificate Type: ${trigger.cert_type}\n- Status: ${trigger.status}\n- Days Remaining: ${trigger.days_remaining}\n- Expiry Date: ${trigger.expiry_date}\n\n## Instructions\n1. Use the ServiceNow MCP tools to look up this host in the CMDB\n2. Identify what business service it belongs to and what depends on it\n3. Use the AAP MCP tools to discover available renewal job templates\n4. Assess the blast radius and risk\n\n## Required Output\nRespond with a JSON object:\n{\n  \"analysis\": \"<risk assessment including CMDB dependencies and blast radius>\",\n  \"recommended_job_template\": \"<exact job template name>\",\n  \"cert_type\": \"<pem or java_keystore>\",\n  \"requires_restart\": <true or false>,\n  \"confidence\": \"<high, medium, or low>\",\n  \"risk_level\": \"<low, medium, or high>\",\n  \"dependent_services\": \"<comma-separated list of dependent services from CMDB>\"\n}",
-        "response_schema": {
-          "type": "object",
-          "properties": {
-            "analysis": {
-              "type": "string"
-            },
-            "recommended_job_template": {
-              "type": "string"
-            },
-            "cert_type": {
-              "type": "string",
-              "enum": [
-                "pem",
-                "java_keystore"
-              ]
-            },
-            "requires_restart": {
-              "type": "boolean"
-            },
-            "confidence": {
-              "type": "string",
-              "enum": [
-                "high",
-                "medium",
-                "low"
-              ]
-            },
-            "risk_level": {
-              "type": "string",
-              "enum": [
-                "low",
-                "medium",
-                "high"
-              ]
-            },
-            "dependent_services": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "position": {
-        "x": 600,
-        "y": 400
-      }
-    },
-    {
       "id": "cert_type_switch",
       "type": "switch",
       "name": "Route by Cert Type",
@@ -115,17 +62,17 @@
           {
             "port": "case_pem",
             "label": "PEM (non-invasive)",
-            "condition": "${ai_assess.result.content.cert_type} == 'pem'"
+            "condition": "${trigger.cert_type} == 'pem'"
           },
           {
             "port": "case_keystore",
             "label": "Java Keystore (invasive)",
-            "condition": "${ai_assess.result.content.cert_type} == 'java_keystore'"
+            "condition": "${trigger.cert_type} == 'java_keystore'"
           }
         ]
       },
       "position": {
-        "x": 1200,
+        "x": 600,
         "y": 400
       }
     },
@@ -139,7 +86,7 @@
         "extra_vars": {
           "action": "create_standard",
           "short_description": "Certificate renewal: ${trigger.service} on ${trigger.host} (PEM - reload, zero downtime)",
-          "description": "Automated PEM certificate renewal.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nCert Type: PEM\nDays Remaining: ${trigger.days_remaining}\n\nAI Assessment: ${ai_assess.result.content.analysis}\nDependent Services: ${ai_assess.result.content.dependent_services}",
+          "description": "Automated PEM certificate renewal.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nPort: ${trigger.port}\nCert Type: PEM\nDays Remaining: ${trigger.days_remaining}\nExpiry: ${trigger.expiry_date}\n\nService impact: nginx reload (zero downtime).",
           "cr_risk": "low",
           "cr_impact": 3,
           "implementation_plan": "1. Request new PEM certificate from Vault CA.\n2. Replace cert and key files on ${trigger.host}.\n3. Reload nginx (zero downtime \u2014 no service restart).\n4. Automated TLS validation.",
@@ -148,7 +95,7 @@
         }
       },
       "position": {
-        "x": 1800,
+        "x": 1200,
         "y": 150
       }
     },
@@ -164,7 +111,7 @@
         }
       },
       "position": {
-        "x": 2400,
+        "x": 1800,
         "y": 150
       }
     },
@@ -181,7 +128,7 @@
         }
       },
       "position": {
-        "x": 3000,
+        "x": 2400,
         "y": 150
       }
     },
@@ -199,7 +146,7 @@
         }
       },
       "position": {
-        "x": 3600,
+        "x": 3000,
         "y": 150
       }
     },
@@ -213,17 +160,17 @@
         "extra_vars": {
           "action": "create_standard",
           "short_description": "Certificate renewal: ${trigger.service} on ${trigger.host} (Java keystore - RESTART REQUIRED)",
-          "description": "Java keystore certificate renewal requiring service restart.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nCert Type: Java Keystore\nDays Remaining: ${trigger.days_remaining}\n\nWARNING: This renewal requires a full Tomcat restart. Brief downtime expected.\n\nAI Assessment: ${ai_assess.result.content.analysis}\nDependent Services: ${ai_assess.result.content.dependent_services}",
+          "description": "Java keystore certificate renewal requiring service restart.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nPort: ${trigger.port}\nCert Type: Java Keystore\nDays Remaining: ${trigger.days_remaining}\nExpiry: ${trigger.expiry_date}\n\nWARNING: This renewal requires a full Tomcat restart. Brief downtime expected.",
           "cr_risk": "medium",
           "cr_impact": 2,
           "assignment_group": "Application Services",
-          "implementation_plan": "1. Request new certificate from Vault CA.\n2. Convert PEM to PKCS12 and import into Java keystore.\n3. RESTART Tomcat service (brief downtime expected).\n4. Automated TLS validation.\n\nDependent services affected: ${ai_assess.result.content.dependent_services}",
+          "implementation_plan": "1. Request new certificate from Vault CA.\n2. Convert PEM to PKCS12 and import into Java keystore.\n3. RESTART Tomcat service (brief downtime expected).\n4. Automated TLS validation.",
           "backout_plan": "Restore /opt/tomcat/conf/keystore.jks.bak and restart Tomcat.",
           "test_plan": "OpenSSL TLS handshake check on ${trigger.host}:${trigger.port} verifying subject, issuer, and expiry > 7 days."
         }
       },
       "position": {
-        "x": 1800,
+        "x": 1200,
         "y": 650
       }
     },
@@ -240,7 +187,7 @@
         }
       },
       "position": {
-        "x": 2400,
+        "x": 1800,
         "y": 650
       }
     },
@@ -249,11 +196,11 @@
       "type": "approval",
       "name": "Awaiting Approval",
       "parameters": {
-        "description": "Java keystore renewal requires a Tomcat restart (brief downtime).\n\nCR: ${create_change_keystore.artifacts.cr_number}\nHost: ${trigger.host}\nDependent Services: ${ai_assess.result.content.dependent_services}\nAI Confidence: ${ai_assess.result.content.confidence}\nRisk: ${ai_assess.result.content.risk_level}\n\nApprove in ServiceNow to proceed.",
+        "description": "Java keystore renewal requires a Tomcat restart (brief downtime).\n\nCR: ${create_change_keystore.artifacts.cr_number}\nHost: ${trigger.host}\nService: ${trigger.service}\nDays Remaining: ${trigger.days_remaining}\n\nApprove in ServiceNow to proceed. Set planned_start_date for the maintenance window.",
         "timeout": 0
       },
       "position": {
-        "x": 3000,
+        "x": 2400,
         "y": 650
       }
     },
@@ -269,7 +216,7 @@
         }
       },
       "position": {
-        "x": 3600,
+        "x": 3000,
         "y": 650
       }
     },
@@ -286,7 +233,7 @@
         }
       },
       "position": {
-        "x": 4200,
+        "x": 3600,
         "y": 650
       }
     },
@@ -304,7 +251,7 @@
         }
       },
       "position": {
-        "x": 4800,
+        "x": 4200,
         "y": 650
       }
     },
@@ -322,7 +269,7 @@
         }
       },
       "position": {
-        "x": 3600,
+        "x": 3000,
         "y": 900
       }
     }
@@ -330,10 +277,6 @@
   "edges": [
     {
       "from": "trigger_manual",
-      "to": "ai_assess"
-    },
-    {
-      "from": "ai_assess",
       "to": "cert_type_switch"
     },
     {
