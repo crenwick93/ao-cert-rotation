@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-# Fire a test cert expiry event to the AO workflow trigger endpoint.
+# Fire a test cert expiry event to the EDA webhook listener.
 # Simulates a Splunk alert for a certificate with 5 days remaining.
 #
 # Usage:
@@ -9,8 +9,8 @@ set -eo pipefail
 #   ./scripts/test-trigger.sh '{"host":"certdemo.demoredhat.com","service":"api-server","cert_type":"java_keystore","port":8443,"status":"critical","days_remaining":5}'
 #
 # Prerequisites:
-#   .env must have AO_WEBHOOK_BASE_URL, AO_WEBHOOK_PATH,
-#   AO_WEBHOOK_CLIENT_ID, and AO_WEBHOOK_CLIENT_SECRET set.
+#   EDA_WEBHOOK_URL must be set in .env (the EDA controller webhook endpoint)
+#   OR pass it as an environment variable.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -22,38 +22,40 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
   set +a
 fi
 
-if [[ -z "${AO_WEBHOOK_BASE_URL:-}" || -z "${AO_WEBHOOK_PATH:-}" || -z "${AO_WEBHOOK_CLIENT_ID:-}" || -z "${AO_WEBHOOK_CLIENT_SECRET:-}" ]]; then
-  echo "ERROR: AO webhook credentials not set in .env"
-  echo "Required: AO_WEBHOOK_BASE_URL, AO_WEBHOOK_PATH, AO_WEBHOOK_CLIENT_ID, AO_WEBHOOK_CLIENT_SECRET"
+# EDA webhook URL — the EDA controller endpoint for the webhook source
+# This is the EDA activation's webhook listener, NOT the AO endpoint
+EDA_WEBHOOK_URL="${EDA_WEBHOOK_URL:-}"
+
+if [[ -z "${EDA_WEBHOOK_URL}" ]]; then
+  echo "ERROR: EDA_WEBHOOK_URL not set in .env"
+  echo "Set it to the EDA webhook listener URL, e.g.:"
+  echo "  EDA_WEBHOOK_URL=https://<aap-host>/api/eda/v1/external_webhook/<activation-id>/"
+  echo ""
+  echo "Find it in AAP → EDA → Rulebook Activations → cert-rotation-cr-bridge → Webhook URL"
   exit 1
 fi
 
 CERT_DOMAIN="${CERT_DOMAIN:-certdemo.demoredhat.com}"
 
-PAYLOAD="${1:-{\"host\":\"${CERT_DOMAIN}\",\"service\":\"nginx\",\"cert_type\":\"pem\",\"port\":443,\"status\":\"critical\",\"days_remaining\":5,\"expiry_date\":\"$(date -d '+5 days' '+%b %d %H:%M:%S %Y GMT' 2>/dev/null || date -v+5d '+%b %d %H:%M:%S %Y GMT')\",\"issuer\":\"Demo Certificate Authority\"}}"
+PAYLOAD="${1:-{\"host\":\"${CERT_DOMAIN}\",\"service\":\"nginx\",\"cert_type\":\"pem\",\"port\":443,\"status\":\"critical\",\"days_remaining\":5,\"expiry_date\":\"$(date -v+5d '+%b %d %H:%M:%S %Y GMT' 2>/dev/null || date -d '+5 days' '+%b %d %H:%M:%S %Y GMT' 2>/dev/null)\",\"issuer\":\"Demo Certificate Authority\"}}"
 
-echo "Authenticating with AO..."
-TOKEN=$(curl -sk -X POST "${AO_WEBHOOK_BASE_URL}/api/v1/auth/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=client_credentials&client_id=${AO_WEBHOOK_CLIENT_ID}&client_secret=${AO_WEBHOOK_CLIENT_SECRET}" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-
-echo "Posting test cert alert to ${AO_WEBHOOK_BASE_URL}/api/v1/webhooks/eda/${AO_WEBHOOK_PATH}..."
-echo "Payload: ${PAYLOAD}" | python3 -m json.tool 2>/dev/null || echo "Payload: ${PAYLOAD}"
+echo "Posting cert alert to EDA webhook: ${EDA_WEBHOOK_URL}"
+echo "Payload:"
+echo "${PAYLOAD}" | python3 -m json.tool 2>/dev/null || echo "${PAYLOAD}"
 echo ""
 
-RESPONSE=$(curl -sk -X POST "${AO_WEBHOOK_BASE_URL}/api/v1/webhooks/eda/${AO_WEBHOOK_PATH}" \
-  -H "Authorization: Bearer ${TOKEN}" \
+RESPONSE=$(curl -sk -X POST "${EDA_WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${AAP_TOKEN}" \
   -d "${PAYLOAD}" \
   -w "\n%{http_code}")
 
 HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
 BODY=$(echo "${RESPONSE}" | head -n -1)
 
-if [[ "${HTTP_CODE}" == "202" ]]; then
-  echo "✅ Cert rotation workflow triggered successfully"
-  echo "${BODY}" | python3 -m json.tool 2>/dev/null || echo "${BODY}"
+if [[ "${HTTP_CODE}" == "200" || "${HTTP_CODE}" == "202" ]]; then
+  echo "✅ Cert alert sent to EDA successfully (HTTP ${HTTP_CODE})"
+  echo "${BODY}"
 else
   echo "❌ Failed (HTTP ${HTTP_CODE})"
   echo "${BODY}"

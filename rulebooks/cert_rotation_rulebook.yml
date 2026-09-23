@@ -1,19 +1,46 @@
 ---
 # EDA rulebook for the cert rotation demo.
 #
-# Monitors ServiceNow change requests and bridges CR approval to the
-# Automation Orchestrator approval gate. When an operator approves a
-# cert renewal CR in ServiceNow (state = Implement), this rulebook
-# fires the bridge_ao_approval.yml playbook to programmatically
-# approve the AO workflow step.
+# Rule 1: Webhook listener — receives Splunk cert expiry alerts and triggers
+#          the AO cert lifecycle workflow via the bridge playbook.
 #
-# The primary trigger (Splunk cert alert) goes directly to AO via webhook.
-# This rulebook only handles the SNOW CR approval bridge.
-#
-# Requires a Decision Environment with servicenow.itsm for the
-# servicenow.itsm.records source plugin. See dependencies/de/decision-environment.yml.
+# Rule 2: SNOW CR polling — monitors ServiceNow change requests and bridges
+#          CR approval to the AO approval gate when a CR moves to Implement.
 
-# ─── ServiceNow CR Approval Bridge ───────────────────────────────────
+# ─── Rule 1: Splunk Cert Alert → AO Workflow ─────────────────────────────────
+- name: Cert Expiry Alert Listener
+  hosts: all
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5000
+  rules:
+    - name: Splunk cert alert received — trigger AO workflow
+      throttle:
+        once_within: 5 minutes
+        group_by_attributes:
+          - payload.host
+          - payload.service
+      condition: event.payload.cert_type is defined and event.payload.days_remaining is defined
+      action:
+        run_job_template:
+          name: AO Workflow Bridge
+          organization: Default
+          post_events: true
+          job_args:
+            extra_vars:
+              webhook_path: "{{ webhook_path }}"
+              event_payload:
+                host: "{{ event.payload.host }}"
+                service: "{{ event.payload.service }}"
+                cert_type: "{{ event.payload.cert_type }}"
+                port: "{{ event.payload.port | default(443) }}"
+                status: "{{ event.payload.status | default('critical') }}"
+                days_remaining: "{{ event.payload.days_remaining }}"
+                expiry_date: "{{ event.payload.expiry_date | default('') }}"
+                issuer: "{{ event.payload.issuer | default('') }}"
+
+# ─── Rule 2: ServiceNow CR Approval Bridge ───────────────────────────────────
 - name: Cert Rotation — CR Approval Bridge
   hosts: all
   sources:
