@@ -5,16 +5,13 @@
 Run these commands **before** the audience arrives:
 
 ```bash
-# 1. Clear all ServiceNow CRs and incidents (clean slate)
-# Use the SNOW API or do manually in SNOW UI
-
-# 2. Full reset (renew certs, clear Splunk, clear SNOW)
+# 1. Full reset (renew certs to 90 days, clean Splunk index, clear SNOW CRs + incidents)
 ./scripts/demo-reset.sh
 
-# 3. Expire the PEM cert (nginx) — ~5 days remaining
+# 2. Expire the PEM cert (nginx) — ~5 days remaining
 ./scripts/expire-pem.sh
 
-# 4. Wait 1-2 minutes for Splunk to show the alert
+# 3. Wait ~2 minutes for the cron to push data and the Splunk alert to fire
 # Verify at http://63.32.42.56:8000 → Alerts → Certificate Expiry Alert → Triggered Alerts
 ```
 
@@ -26,7 +23,7 @@ Run these commands **before** the audience arrives:
 - [ ] EDA activation running (cert-rotation — CR bridge)
 - [ ] ServiceNow instance clean, CMDB populated, change templates created
 - [ ] PEM cert expired (~5 days), Splunk alert visible
-- [ ] Browser open to citizen portal (`https://63.32.42.56:443`)
+- [ ] Browser open to citizen portal (`https://63.32.42.56`)
 - [ ] SSH session ready to the demo VM
 
 ## Opening (1 min)
@@ -39,13 +36,14 @@ Run these commands **before** the audience arrives:
 
 ## Act 1: Show the Cert Is Expiring (2 min)
 
-**Browser:** Visit `https://63.32.42.56:443` → click padlock → show cert expiry (~5 days)
+**Browser:** Visit `https://63.32.42.56` → click padlock → show cert expiry (~5 days)
 
 > "Here's the citizen portal. The padlock shows the cert expires in 5 days."
 
 **SSH into demo VM:**
 ```bash
-echo | openssl s_client -connect localhost:443 -servername certdemo.demoredhat.com 2>/dev/null | openssl x509 -noout -subject -issuer -dates
+ssh -i setup/terraform/demo-key.pem ec2-user@63.32.42.56
+echo | openssl s_client -connect localhost:443 -servername certdemo.demoredhat.com 2>/dev/null | openssl x509 -noout -subject -enddate
 ```
 
 > "The server confirms it — 5 days to expiry."
@@ -53,6 +51,11 @@ echo | openssl s_client -connect localhost:443 -servername certdemo.demoredhat.c
 **Splunk:** Show `http://63.32.42.56:8000` → Alerts → Certificate Expiry Alert → Triggered Alerts
 
 > "Our monitoring pushes cert data into Splunk every minute. When days remaining drops below 7, the alert fires."
+
+**Splunk search (optional):** Show what Splunk is ingesting:
+```
+index=main sourcetype=cert_monitor | table _time service cert_type days_remaining status
+```
 
 ## Act 2: Fire the PEM Workflow (3 min)
 
@@ -93,7 +96,7 @@ echo | openssl s_client -connect localhost:443 -servername certdemo.demoredhat.c
 
 **SSH:**
 ```bash
-echo | openssl s_client -connect localhost:8443 -servername certdemo.demoredhat.com 2>/dev/null | openssl x509 -noout -dates
+echo | openssl s_client -connect localhost:8443 -servername certdemo.demoredhat.com 2>/dev/null | openssl x509 -noout -subject -enddate
 ```
 
 > "5 days remaining on the keystore cert."
@@ -141,19 +144,24 @@ echo | openssl s_client -connect localhost:8443 -servername certdemo.demoredhat.
 ## Quick Reference Commands
 
 ```bash
-# Expire PEM cert only
-./scripts/expire-pem.sh
+# Full reset (certs, Splunk, SNOW)
+./scripts/demo-reset.sh
 
-# Expire keystore cert only
+# Expire certs
+./scripts/expire-pem.sh
 ./scripts/expire-keystore.sh
 
-# Trigger PEM workflow
-./scripts/test-trigger.sh
+# Trigger workflows via EDA
+./scripts/test-trigger.sh            # PEM
+./scripts/test-trigger.sh keystore   # Keystore
 
-# Trigger keystore workflow
-./scripts/test-trigger.sh keystore
+# SSH to demo VM
+ssh -i setup/terraform/demo-key.pem ec2-user@63.32.42.56
 
-# Check cert from server
-echo | openssl s_client -connect localhost:443 2>/dev/null | openssl x509 -noout -dates
-echo | openssl s_client -connect localhost:8443 2>/dev/null | openssl x509 -noout -dates
+# Check certs from the VM
+echo | openssl s_client -connect localhost:443 -servername certdemo.demoredhat.com 2>/dev/null | openssl x509 -noout -subject -enddate
+echo | openssl s_client -connect localhost:8443 -servername certdemo.demoredhat.com 2>/dev/null | openssl x509 -noout -subject -enddate
+
+# Splunk search
+index=main sourcetype=cert_monitor | table _time service cert_type days_remaining status
 ```

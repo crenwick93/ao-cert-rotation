@@ -222,13 +222,90 @@
     - name: Create index page
       ansible.builtin.copy:
         content: |
-          <html>
-          <head><title>Cert Rotation Demo — nginx</title></head>
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Citizen Digital Service</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { font-family: "Helvetica Neue", Arial, sans-serif; background: #f3f2f1; color: #0b0c0c; }
+              .gov-header { background: #0b0c0c; padding: 10px 0; }
+              .gov-header-inner { max-width: 960px; margin: 0 auto; padding: 0 15px; display: flex; align-items: center; }
+              .gov-crown { font-size: 28px; margin-right: 10px; }
+              .gov-header-title { color: #fff; font-size: 18px; font-weight: 700; text-decoration: none; }
+              .gov-header-title:hover { text-decoration: underline; }
+              .gov-phase-banner { background: #f3f2f1; border-bottom: 1px solid #b1b4b6; padding: 10px 0; }
+              .gov-phase-inner { max-width: 960px; margin: 0 auto; padding: 0 15px; font-size: 14px; color: #505a5f; }
+              .gov-phase-tag { display: inline-block; background: #1d70b8; color: #fff; font-size: 12px; font-weight: 700; padding: 2px 8px; margin-right: 8px; text-transform: uppercase; letter-spacing: 1px; }
+              .gov-main { max-width: 960px; margin: 0 auto; padding: 30px 15px 60px; }
+              .gov-main h1 { font-size: 36px; font-weight: 700; margin-bottom: 20px; }
+              .gov-main .lede { font-size: 18px; color: #505a5f; margin-bottom: 30px; line-height: 1.5; }
+              .gov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 40px; }
+              .gov-card { background: #fff; border-left: 4px solid #1d70b8; padding: 20px; }
+              .gov-card h3 { font-size: 18px; margin-bottom: 8px; }
+              .gov-card p { font-size: 14px; color: #505a5f; line-height: 1.5; }
+              .gov-card .status { display: inline-block; padding: 2px 10px; font-size: 12px; font-weight: 700; margin-top: 8px; }
+              .status-ok { background: #00703c; color: #fff; }
+              .gov-section { margin-bottom: 30px; }
+              .gov-section h2 { font-size: 24px; font-weight: 700; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #0b0c0c; }
+              .gov-table { width: 100%; border-collapse: collapse; }
+              .gov-table th, .gov-table td { text-align: left; padding: 10px 15px; border-bottom: 1px solid #b1b4b6; font-size: 14px; }
+              .gov-table th { font-weight: 700; background: #f3f2f1; }
+              .gov-footer { background: #f3f2f1; border-top: 1px solid #b1b4b6; padding: 20px 0; margin-top: 40px; }
+              .gov-footer-inner { max-width: 960px; margin: 0 auto; padding: 0 15px; font-size: 13px; color: #505a5f; }
+              @media (max-width: 640px) { .gov-grid { grid-template-columns: 1fr; } }
+            </style>
+          </head>
           <body>
-            <h1>Cert Rotation Demo</h1>
-            <p>Service: <strong>nginx</strong> (PEM certificate)</p>
-            <p>Host: {{ ansible_hostname }}</p>
-            <p>Domain: {{ cert_domain }}</p>
+            <header class="gov-header">
+              <div class="gov-header-inner">
+                <span class="gov-crown">&#x1F3DB;</span>
+                <a href="/" class="gov-header-title">Citizen Digital Service</a>
+              </div>
+            </header>
+            <div class="gov-phase-banner">
+              <div class="gov-phase-inner">
+                <span class="gov-phase-tag">Demo</span>
+                Certificate lifecycle management — automated with Red Hat Ansible Automation Platform
+              </div>
+            </div>
+            <main class="gov-main">
+              <h1>Citizen Digital Service</h1>
+              <p class="lede">
+                This portal provides secure access to citizen services. TLS certificates are
+                monitored by Splunk and automatically rotated using Ansible Automation Platform
+                with ITIL-compliant ServiceNow change management.
+              </p>
+              <div class="gov-grid">
+                <div class="gov-card">
+                  <h3>&#x1F310; Web Portal (nginx)</h3>
+                  <p>PEM certificate &mdash; automatic renewal with zero-downtime reload</p>
+                  <span class="status status-ok">&#x2713; Secured</span>
+                </div>
+                <div class="gov-card">
+                  <h3>&#x2699;&#xFE0F; API Service (Tomcat)</h3>
+                  <p>Java keystore &mdash; renewal requires approved change request</p>
+                  <span class="status status-ok">&#x2713; Secured</span>
+                </div>
+              </div>
+              <div class="gov-section">
+                <h2>Service information</h2>
+                <table class="gov-table">
+                  <tr><th>Domain</th><td>certdemo.demoredhat.com</td></tr>
+                  <tr><th>Certificate Authority</th><td>HashiCorp Vault PKI (Demo CA)</td></tr>
+                  <tr><th>Monitoring</th><td>Splunk &mdash; certificate expiry alerts</td></tr>
+                  <tr><th>Automation</th><td>Ansible Automation Platform &amp; Automation Orchestrator</td></tr>
+                  <tr><th>Change Management</th><td>ServiceNow &mdash; ITIL standard changes</td></tr>
+                </table>
+              </div>
+            </main>
+            <footer class="gov-footer">
+              <div class="gov-footer-inner">
+                Red Hat Ansible Automation Platform &mdash; Certificate Rotation Demo
+              </div>
+            </footer>
           </body>
           </html>
         dest: /usr/share/nginx/html/index.html

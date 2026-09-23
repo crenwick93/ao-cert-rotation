@@ -147,8 +147,8 @@
     - name: Configure Splunk HEC token in push script environment
       ansible.builtin.copy:
         content: |
-          SPLUNK_HEC_TOKEN={{ splunk_hec_token }}
-          CERT_DOMAIN={{ cert_domain }}
+          export SPLUNK_HEC_TOKEN={{ splunk_hec_token }}
+          export CERT_DOMAIN={{ cert_domain }}
         dest: /etc/sysconfig/cert-monitor
         mode: "0600"
 
