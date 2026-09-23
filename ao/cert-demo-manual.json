@@ -142,7 +142,7 @@
         "extra_vars": {
           "action": "close",
           "cr_sys_id": "${create_change_pem.artifacts.cr_sys_id}",
-          "close_notes": "Status: PEM certificate renewed successfully\nValidation: ${validate_pem.artifacts.validation_result}\nNew Expiry: ${validate_pem.artifacts.cert_expiry}\nDays Remaining: ${validate_pem.artifacts.cert_days_remaining}\nSubject: ${validate_pem.artifacts.cert_subject}\nRenewal Job: https://aaponprem.chrislab.dev/#/jobs/${renew_pem.artifacts.renewal_job_id}/output\nValidation Job: https://aaponprem.chrislab.dev/#/jobs/${validate_pem.artifacts.validation_job_id}/output"
+          "close_notes": "Status: PEM certificate renewed successfully\nValidation: ${validate_pem.artifacts.validation_result}\nNew Expiry: ${validate_pem.artifacts.cert_expiry}\nDays Remaining: ${validate_pem.artifacts.cert_days_remaining}\nSubject: ${validate_pem.artifacts.cert_subject}\nRenewal Job: https://aaponprem.chrislab.dev/execution/jobs/playbook/${renew_pem.artifacts.renewal_job_id}/output\nValidation Job: https://aaponprem.chrislab.dev/execution/jobs/playbook/${validate_pem.artifacts.validation_job_id}/output"
         }
       },
       "position": {
@@ -247,7 +247,7 @@
         "extra_vars": {
           "action": "close",
           "cr_sys_id": "${create_change_keystore.artifacts.cr_sys_id}",
-          "close_notes": "Status: Java keystore certificate renewed successfully (Tomcat restarted)\nValidation: ${validate_keystore.artifacts.validation_result}\nNew Expiry: ${validate_keystore.artifacts.cert_expiry}\nDays Remaining: ${validate_keystore.artifacts.cert_days_remaining}\nSubject: ${validate_keystore.artifacts.cert_subject}\nRenewal Job: https://aaponprem.chrislab.dev/#/jobs/${renew_keystore.artifacts.renewal_job_id}/output\nValidation Job: https://aaponprem.chrislab.dev/#/jobs/${validate_keystore.artifacts.validation_job_id}/output"
+          "close_notes": "Status: Java keystore certificate renewed successfully (Tomcat restarted)\nValidation: ${validate_keystore.artifacts.validation_result}\nNew Expiry: ${validate_keystore.artifacts.cert_expiry}\nDays Remaining: ${validate_keystore.artifacts.cert_days_remaining}\nSubject: ${validate_keystore.artifacts.cert_subject}\nRenewal Job: https://aaponprem.chrislab.dev/execution/jobs/playbook/${renew_keystore.artifacts.renewal_job_id}/output\nValidation Job: https://aaponprem.chrislab.dev/execution/jobs/playbook/${validate_keystore.artifacts.validation_job_id}/output"
         }
       },
       "position": {
