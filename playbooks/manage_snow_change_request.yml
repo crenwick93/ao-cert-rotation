@@ -27,11 +27,11 @@
       ansible.builtin.assert:
         that:
           - action is defined
-          - action in ['create', 'authorize', 'update', 'review', 'close']
-        fail_msg: "action must be one of: create, authorize, update, review, close"
+          - action in ['create', 'create_standard', 'authorize', 'update', 'review', 'close']
+        fail_msg: "action must be one of: create, create_standard, authorize, update, review, close"
 
     # =========================================================================
-    # ACTION: create
+    # ACTION: create (emergency — legacy, kept for backwards compatibility)
     # =========================================================================
     - name: Create emergency Change Request
       servicenow.itsm.change_request:
@@ -61,13 +61,62 @@
           Sys ID: {{ cr_result.record.sys_id }}
       when: action == 'create'
 
-    - name: Publish CR identifiers
+    - name: Publish CR identifiers (emergency)
       ansible.builtin.set_stats:
         data:
           cr_sys_id: "{{ cr_result.record.sys_id }}"
           cr_number: "{{ cr_result.record.number }}"
         aggregate: false
       when: action == 'create'
+
+    # =========================================================================
+    # ACTION: create_standard
+    # Creates a standard change from a change template. Templates define the
+    # approval policy, plans, and risk — the playbook fills in the specifics.
+    # =========================================================================
+    - name: Validate create_standard parameters
+      ansible.builtin.assert:
+        that:
+          - short_description is defined
+        fail_msg: "short_description must be provided for create_standard"
+      when: action == 'create_standard'
+
+    - name: Create standard Change Request
+      servicenow.itsm.change_request:
+        type: standard
+        state: new
+        short_description: "{{ short_description }}"
+        description: "{{ description | default(omit) }}"
+        priority: "{{ cr_priority | default(3) }}"
+        risk: "{{ cr_risk | default('low') }}"
+        impact: "{{ cr_impact | default(3) }}"
+        category: "{{ cr_category | default('Software') }}"
+        assignment_group: "{{ cr_assignment_group | default('Platform Services') }}"
+        other:
+          std_change_producer_version: "{{ change_template_id | default(omit) }}"
+          justification: "{{ justification | default('Automated certificate renewal.') }}"
+          implementation_plan: "{{ implementation_plan | default('Automated by Ansible Automation Platform.') }}"
+          backout_plan: "{{ backout_plan | default('Restore certificate from backup and reload/restart service.') }}"
+          test_plan: "{{ test_plan | default('Automated TLS validation after renewal.') }}"
+      register: cr_std_result
+      when: action == 'create_standard'
+
+    - name: Display created standard CR
+      ansible.builtin.debug:
+        msg: |
+          === Standard Change Request Created ===
+          Number: {{ cr_std_result.record.number }}
+          Sys ID: {{ cr_std_result.record.sys_id }}
+          Type: Standard
+      when: action == 'create_standard'
+
+    - name: Publish CR identifiers (standard)
+      ansible.builtin.set_stats:
+        data:
+          cr_sys_id: "{{ cr_std_result.record.sys_id }}"
+          cr_number: "{{ cr_std_result.record.number }}"
+        aggregate: false
+      when: action == 'create_standard'
 
     # =========================================================================
     # ACTION: authorize

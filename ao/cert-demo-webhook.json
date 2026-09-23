@@ -1,7 +1,7 @@
 {
   "schema_version": "2.0.0",
   "name": "Intelligent Cert Lifecycle",
-  "description": "AI-driven certificate renewal: Splunk detects near-expiry certs, SNOW tracks the incident/CR lifecycle, an AI agent picks the correct renewal strategy (PEM vs Java keystore), an operator approves via SNOW, and AAP renews + validates TLS automatically.",
+  "description": "ITIL-correct certificate renewal: Splunk detects near-expiry certs, a standard change is raised (pre-approved for non-invasive, approval required for restarts), AAP renews and validates TLS. An incident is only created if renewal fails.",
   "triggers": [
     {
       "id": "trigger_webhook",
@@ -11,160 +11,42 @@
         "input_schema": {
           "type": "object",
           "properties": {
-            "host": {
-              "type": "string",
-              "description": "Hostname of the service with the expiring cert"
-            },
-            "service": {
-              "type": "string",
-              "description": "Service name (nginx or api-server)"
-            },
-            "cert_type": {
-              "type": "string",
-              "description": "Certificate type (pem or java_keystore)"
-            },
-            "port": {
-              "type": "integer",
-              "description": "Port the service listens on"
-            },
-            "status": {
-              "type": "string",
-              "description": "Certificate status (critical, expired, warning, valid)"
-            },
-            "days_remaining": {
-              "type": "integer",
-              "description": "Days until certificate expires"
-            },
-            "expiry_date": {
-              "type": "string",
-              "description": "Certificate expiry date"
-            },
-            "issuer": {
-              "type": "string",
-              "description": "Certificate issuer"
-            }
+            "host": { "type": "string", "description": "Hostname of the service with the expiring cert" },
+            "service": { "type": "string", "description": "Service name (nginx or api-server)" },
+            "cert_type": { "type": "string", "description": "Certificate type (pem or java_keystore)" },
+            "port": { "type": "integer", "description": "Port the service listens on" },
+            "status": { "type": "string", "description": "Certificate status (critical, expired, warning, valid)" },
+            "days_remaining": { "type": "integer", "description": "Days until certificate expires" },
+            "expiry_date": { "type": "string", "description": "Certificate expiry date" },
+            "issuer": { "type": "string", "description": "Certificate issuer" }
           }
         }
       },
-      "position": { "x": 0, "y": 300 }
+      "position": { "x": 0, "y": 400 }
     }
   ],
   "nodes": [
     {
-      "id": "create_incident",
-      "type": "aap_job_template",
-      "name": "Create SNOW Incident",
-      "parameters": {
-        "job_template_name": "Manage SNOW Incident",
-        "organization_name": "Default",
-        "extra_vars": {
-          "action": "create",
-          "short_description": "Certificate expiring on ${trigger.host}:${trigger.port} (${trigger.service}) — ${trigger.days_remaining} days remaining",
-          "description": "Automated alert from Splunk cert monitoring.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nPort: ${trigger.port}\nCert Type: ${trigger.cert_type}\nStatus: ${trigger.status}\nDays Remaining: ${trigger.days_remaining}\nExpiry Date: ${trigger.expiry_date}\nIssuer: ${trigger.issuer}\n\nThis certificate requires renewal before expiry.",
-          "incident_impact": "high",
-          "incident_urgency": "high",
-          "incident_category": "Software",
-          "incident_subcategory": "Certificate Management"
-        }
-      },
-      "position": { "x": 400, "y": 300 }
-    },
-    {
-      "id": "ai_plan_renewal",
+      "id": "ai_assess",
       "type": "agentic",
-      "name": "AI: Plan Renewal",
+      "name": "AI: Assess & Recommend",
       "parameters": {
         "model": "claude-sonnet-4-6",
-        "prompt": "You are a certificate lifecycle management expert. Analyze the following certificate expiry alert and recommend the correct renewal strategy.\n\n## Alert Details\n- Host: ${trigger.host}\n- Service: ${trigger.service}\n- Port: ${trigger.port}\n- Certificate Type: ${trigger.cert_type}\n- Status: ${trigger.status}\n- Days Remaining: ${trigger.days_remaining}\n- Expiry Date: ${trigger.expiry_date}\n\n## Instructions\n1. Use the AAP MCP tools to discover available job templates\n2. Identify which job template is the correct one for renewing this certificate type\n3. Provide your analysis and recommendation\n\n## Required Output\nProvide a concise analysis (under 1000 characters) suitable for a ServiceNow work note, including:\n- What certificate type this is and why it matters\n- Which AAP job template should be used for renewal\n- Your confidence level (high/medium/low) and reasoning\n- Any risks or considerations for the renewal\n\nRespond with a JSON object:\n{\n  \"analysis\": \"<your analysis text>\",\n  \"recommended_job_template\": \"<exact job template name>\",\n  \"cert_type\": \"<pem or java_keystore>\",\n  \"confidence\": \"<high, medium, or low>\",\n  \"risk_level\": \"<low, medium, or high>\"\n}",
+        "prompt": "You are a certificate lifecycle management expert. Analyze the following certificate expiry alert and assess the risk.\n\n## Alert Details\n- Host: ${trigger.host}\n- Service: ${trigger.service}\n- Port: ${trigger.port}\n- Certificate Type: ${trigger.cert_type}\n- Status: ${trigger.status}\n- Days Remaining: ${trigger.days_remaining}\n- Expiry Date: ${trigger.expiry_date}\n\n## Instructions\n1. Use the ServiceNow MCP tools to look up this host in the CMDB\n2. Identify what business service it belongs to and what depends on it\n3. Use the AAP MCP tools to discover available renewal job templates\n4. Assess the blast radius and risk\n\n## Required Output\nRespond with a JSON object:\n{\n  \"analysis\": \"<risk assessment including CMDB dependencies and blast radius>\",\n  \"recommended_job_template\": \"<exact job template name>\",\n  \"cert_type\": \"<pem or java_keystore>\",\n  \"requires_restart\": <true or false>,\n  \"confidence\": \"<high, medium, or low>\",\n  \"risk_level\": \"<low, medium, or high>\",\n  \"dependent_services\": \"<comma-separated list of dependent services from CMDB>\"\n}",
         "response_schema": {
           "type": "object",
           "properties": {
-            "analysis": {
-              "type": "string",
-              "description": "Detailed analysis of the certificate and renewal recommendation"
-            },
-            "recommended_job_template": {
-              "type": "string",
-              "description": "Exact name of the AAP job template to use"
-            },
-            "cert_type": {
-              "type": "string",
-              "enum": ["pem", "java_keystore"],
-              "description": "Certificate type requiring renewal"
-            },
-            "confidence": {
-              "type": "string",
-              "enum": ["high", "medium", "low"],
-              "description": "Confidence level in the recommendation"
-            },
-            "risk_level": {
-              "type": "string",
-              "enum": ["low", "medium", "high"],
-              "description": "Risk level of the renewal operation"
-            }
+            "analysis": { "type": "string" },
+            "recommended_job_template": { "type": "string" },
+            "cert_type": { "type": "string", "enum": ["pem", "java_keystore"] },
+            "requires_restart": { "type": "boolean" },
+            "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+            "risk_level": { "type": "string", "enum": ["low", "medium", "high"] },
+            "dependent_services": { "type": "string" }
           }
         }
       },
-      "position": { "x": 800, "y": 100 }
-    },
-    {
-      "id": "update_incident_analysis",
-      "type": "aap_job_template",
-      "name": "Update Incident (AI Analysis)",
-      "parameters": {
-        "job_template_name": "Manage SNOW Incident",
-        "organization_name": "Default",
-        "extra_vars": {
-          "action": "update",
-          "inc_sys_id": "${create_incident.artifacts.inc_sys_id}",
-          "work_notes": "<h3>AI Certificate Analysis</h3><p><strong>Confidence:</strong> ${ai_plan_renewal.result.content.confidence}</p><p><strong>Risk Level:</strong> ${ai_plan_renewal.result.content.risk_level}</p><p><strong>Recommended Template:</strong> ${ai_plan_renewal.result.content.recommended_job_template}</p><p><strong>Analysis:</strong></p><p>${ai_plan_renewal.result.content.analysis}</p>"
-        }
-      },
-      "position": { "x": 1200, "y": 100 }
-    },
-    {
-      "id": "create_change_request",
-      "type": "aap_job_template",
-      "name": "Create SNOW Change Request",
-      "parameters": {
-        "job_template_name": "Manage SNOW Change Request",
-        "organization_name": "Default",
-        "extra_vars": {
-          "action": "create",
-          "short_description": "Certificate renewal: ${trigger.service} on ${trigger.host} (${ai_plan_renewal.result.content.cert_type})",
-          "description": "Automated certificate renewal requested by AI analysis.\n\nService: ${trigger.service}\nHost: ${trigger.host}\nCert Type: ${ai_plan_renewal.result.content.cert_type}\nJob Template: ${ai_plan_renewal.result.content.recommended_job_template}\nAI Confidence: ${ai_plan_renewal.result.content.confidence}\n\nIncident: ${create_incident.artifacts.inc_number}",
-          "inc_sys_id": "${create_incident.artifacts.inc_sys_id}",
-          "justification": "Certificate on ${trigger.host}:${trigger.port} expires in ${trigger.days_remaining} days. AI analysis recommends ${ai_plan_renewal.result.content.recommended_job_template} with ${ai_plan_renewal.result.content.confidence} confidence.",
-          "implementation_plan": "Execute ${ai_plan_renewal.result.content.recommended_job_template} via AAP to renew the ${ai_plan_renewal.result.content.cert_type} certificate, followed by automated TLS validation.",
-          "backout_plan": "Previous certificate files are backed up during renewal. Restore from backup and reload/restart the service if renewal fails.",
-          "test_plan": "Automated post-renewal validation: OpenSSL TLS handshake check verifying new certificate subject, issuer, and expiry > 7 days."
-        }
-      },
-      "position": { "x": 1200, "y": 300 }
-    },
-    {
-      "id": "authorize_cr",
-      "type": "aap_job_template",
-      "name": "Authorize CR",
-      "parameters": {
-        "job_template_name": "Manage SNOW Change Request",
-        "organization_name": "Default",
-        "extra_vars": {
-          "action": "authorize",
-          "cr_number": "${create_change_request.artifacts.cr_number}"
-        }
-      },
-      "position": { "x": 1600, "y": 300 }
-    },
-    {
-      "id": "approval_gate",
-      "type": "approval",
-      "name": "Awaiting CR Approval",
-      "parameters": {
-        "description": "Waiting for ServiceNow Change Request approval. An operator must review the AI analysis and approve the CR in ServiceNow (move to Implement state). EDA will auto-bridge the approval to this gate.\n\nIncident: ${create_incident.artifacts.inc_number}\nCR: ${create_change_request.artifacts.cr_number}\nAI Confidence: ${ai_plan_renewal.result.content.confidence}\nRecommended Action: ${ai_plan_renewal.result.content.recommended_job_template}",
-        "timeout": 0
-      },
-      "position": { "x": 2000, "y": 300 }
+      "position": { "x": 600, "y": 400 }
     },
     {
       "id": "cert_type_switch",
@@ -174,17 +56,38 @@
         "cases": [
           {
             "port": "case_pem",
-            "label": "PEM Certificate (nginx)",
-            "condition": "${ai_plan_renewal.result.content.cert_type} == 'pem'"
+            "label": "PEM (non-invasive)",
+            "condition": "${ai_assess.result.content.cert_type} == 'pem'"
           },
           {
             "port": "case_keystore",
-            "label": "Java Keystore (API Server)",
-            "condition": "${ai_plan_renewal.result.content.cert_type} == 'java_keystore'"
+            "label": "Java Keystore (invasive)",
+            "condition": "${ai_assess.result.content.cert_type} == 'java_keystore'"
           }
         ]
       },
-      "position": { "x": 2400, "y": 300 }
+      "position": { "x": 1200, "y": 400 }
+    },
+
+    {
+      "id": "create_change_pem",
+      "type": "aap_job_template",
+      "name": "Standard Change (PEM)",
+      "parameters": {
+        "job_template_name": "Manage SNOW Change Request",
+        "organization_name": "Default",
+        "extra_vars": {
+          "action": "create_standard",
+          "short_description": "Certificate renewal: ${trigger.service} on ${trigger.host} (PEM - reload, zero downtime)",
+          "description": "Automated PEM certificate renewal.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nCert Type: PEM\nDays Remaining: ${trigger.days_remaining}\n\nAI Assessment: ${ai_assess.result.content.analysis}\nDependent Services: ${ai_assess.result.content.dependent_services}",
+          "cr_risk": "low",
+          "cr_impact": 3,
+          "implementation_plan": "1. Request new PEM certificate from Vault CA.\n2. Replace cert and key files on ${trigger.host}.\n3. Reload nginx (zero downtime — no service restart).\n4. Automated TLS validation.",
+          "backout_plan": "Restore /etc/pki/tls/certs/server.crt.bak and /etc/pki/tls/private/server.key.bak, then reload nginx.",
+          "test_plan": "OpenSSL TLS handshake check on ${trigger.host}:${trigger.port} verifying subject, issuer, and expiry > 7 days."
+        }
+      },
+      "position": { "x": 1800, "y": 150 }
     },
     {
       "id": "renew_pem",
@@ -197,7 +100,82 @@
           "cert_domain": "${trigger.host}"
         }
       },
-      "position": { "x": 2800, "y": 100 }
+      "position": { "x": 2400, "y": 150 }
+    },
+    {
+      "id": "validate_pem",
+      "type": "aap_job_template",
+      "name": "Validate PEM Renewal",
+      "parameters": {
+        "job_template_name": "Validate Cert Renewal",
+        "organization_name": "Default",
+        "extra_vars": {
+          "cert_domain": "${trigger.host}",
+          "validation_port": "${trigger.port}"
+        }
+      },
+      "position": { "x": 3000, "y": 150 }
+    },
+    {
+      "id": "close_change_pem",
+      "type": "aap_job_template",
+      "name": "Close Change (PEM)",
+      "parameters": {
+        "job_template_name": "Manage SNOW Change Request",
+        "organization_name": "Default",
+        "extra_vars": {
+          "action": "close",
+          "cr_sys_id": "${create_change_pem.artifacts.cr_sys_id}",
+          "close_notes": "PEM certificate renewed successfully.\nValidation: ${validate_pem.artifacts.validation_result}\nNew expiry: ${validate_pem.artifacts.cert_expiry}\nDays remaining: ${validate_pem.artifacts.cert_days_remaining}\nSubject: ${validate_pem.artifacts.cert_subject}"
+        }
+      },
+      "position": { "x": 3600, "y": 150 }
+    },
+
+    {
+      "id": "create_change_keystore",
+      "type": "aap_job_template",
+      "name": "Standard Change (Keystore)",
+      "parameters": {
+        "job_template_name": "Manage SNOW Change Request",
+        "organization_name": "Default",
+        "extra_vars": {
+          "action": "create_standard",
+          "short_description": "Certificate renewal: ${trigger.service} on ${trigger.host} (Java keystore - RESTART REQUIRED)",
+          "description": "Java keystore certificate renewal requiring service restart.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nCert Type: Java Keystore\nDays Remaining: ${trigger.days_remaining}\n\nWARNING: This renewal requires a full Tomcat restart. Brief downtime expected.\n\nAI Assessment: ${ai_assess.result.content.analysis}\nDependent Services: ${ai_assess.result.content.dependent_services}",
+          "cr_risk": "medium",
+          "cr_impact": 2,
+          "assignment_group": "Application Services",
+          "implementation_plan": "1. Request new certificate from Vault CA.\n2. Convert PEM to PKCS12 and import into Java keystore.\n3. RESTART Tomcat service (brief downtime expected).\n4. Automated TLS validation.\n\nDependent services affected: ${ai_assess.result.content.dependent_services}",
+          "backout_plan": "Restore /opt/tomcat/conf/keystore.jks.bak and restart Tomcat.",
+          "test_plan": "OpenSSL TLS handshake check on ${trigger.host}:${trigger.port} verifying subject, issuer, and expiry > 7 days."
+        }
+      },
+      "position": { "x": 1800, "y": 650 }
+    },
+    {
+      "id": "authorize_keystore",
+      "type": "aap_job_template",
+      "name": "Request Approval",
+      "parameters": {
+        "job_template_name": "Manage SNOW Change Request",
+        "organization_name": "Default",
+        "extra_vars": {
+          "action": "authorize",
+          "cr_number": "${create_change_keystore.artifacts.cr_number}"
+        }
+      },
+      "position": { "x": 2400, "y": 650 }
+    },
+    {
+      "id": "approval_gate",
+      "type": "approval",
+      "name": "Awaiting Approval",
+      "parameters": {
+        "description": "Java keystore renewal requires a Tomcat restart (brief downtime).\n\nCR: ${create_change_keystore.artifacts.cr_number}\nHost: ${trigger.host}\nDependent Services: ${ai_assess.result.content.dependent_services}\nAI Confidence: ${ai_assess.result.content.confidence}\nRisk: ${ai_assess.result.content.risk_level}\n\nApprove in ServiceNow to proceed.",
+        "timeout": 0
+      },
+      "position": { "x": 3000, "y": 650 }
     },
     {
       "id": "renew_keystore",
@@ -210,12 +188,12 @@
           "cert_domain": "${trigger.host}"
         }
       },
-      "position": { "x": 2800, "y": 500 }
+      "position": { "x": 3600, "y": 650 }
     },
     {
-      "id": "validate_renewal",
+      "id": "validate_keystore",
       "type": "aap_job_template",
-      "name": "Validate Renewal",
+      "name": "Validate Keystore Renewal",
       "parameters": {
         "job_template_name": "Validate Cert Renewal",
         "organization_name": "Default",
@@ -224,69 +202,93 @@
           "validation_port": "${trigger.port}"
         }
       },
-      "position": { "x": 3200, "y": 300 }
+      "position": { "x": 4200, "y": 650 }
     },
     {
-      "id": "resolve_incident",
+      "id": "close_change_keystore",
       "type": "aap_job_template",
-      "name": "Resolve Incident",
-      "parameters": {
-        "job_template_name": "Manage SNOW Incident",
-        "organization_name": "Default",
-        "extra_vars": {
-          "action": "resolve",
-          "inc_sys_id": "${create_incident.artifacts.inc_sys_id}",
-          "work_notes": "<h3>Certificate Renewed Successfully</h3><p><strong>Service:</strong> ${trigger.service}</p><p><strong>New Expiry:</strong> ${validate_renewal.artifacts.cert_expiry}</p><p><strong>Days Remaining:</strong> ${validate_renewal.artifacts.cert_days_remaining}</p><p><strong>Validation:</strong> ${validate_renewal.artifacts.validation_result}</p><p><strong>Subject:</strong> ${validate_renewal.artifacts.cert_subject}</p>"
-        }
-      },
-      "position": { "x": 3600, "y": 200 }
-    },
-    {
-      "id": "close_cr",
-      "type": "aap_job_template",
-      "name": "Close Change Request",
+      "name": "Close Change (Keystore)",
       "parameters": {
         "job_template_name": "Manage SNOW Change Request",
         "organization_name": "Default",
         "extra_vars": {
           "action": "close",
-          "cr_sys_id": "${create_change_request.artifacts.cr_sys_id}",
-          "close_notes": "Certificate renewal completed. Validation: ${validate_renewal.artifacts.validation_result}. New expiry: ${validate_renewal.artifacts.cert_expiry}."
+          "cr_sys_id": "${create_change_keystore.artifacts.cr_sys_id}",
+          "close_notes": "Java keystore certificate renewed successfully. Tomcat restarted.\nValidation: ${validate_keystore.artifacts.validation_result}\nNew expiry: ${validate_keystore.artifacts.cert_expiry}\nDays remaining: ${validate_keystore.artifacts.cert_days_remaining}\nSubject: ${validate_keystore.artifacts.cert_subject}"
         }
       },
-      "position": { "x": 3600, "y": 400 }
+      "position": { "x": 4800, "y": 650 }
     },
+
     {
-      "id": "rejection_handler",
+      "id": "incident_pem_fail",
       "type": "aap_job_template",
-      "name": "Handle Rejection",
+      "name": "Incident: PEM Renewal Failed",
       "parameters": {
         "job_template_name": "Manage SNOW Incident",
         "organization_name": "Default",
         "extra_vars": {
-          "action": "update",
-          "inc_sys_id": "${create_incident.artifacts.inc_sys_id}",
-          "work_notes": "<h3>Certificate Renewal Rejected</h3><p>The change request for certificate renewal was rejected. Manual intervention is required before the certificate expires.</p><p><strong>Days Remaining:</strong> ${trigger.days_remaining}</p>",
-          "incident_state": "in_progress"
+          "action": "create",
+          "short_description": "FAILED: Certificate renewal failed on ${trigger.host}:${trigger.port} (${trigger.service})",
+          "description": "Automated PEM certificate renewal FAILED.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nCert Type: PEM\nDays Remaining: ${trigger.days_remaining}\nChange Request: ${create_change_pem.artifacts.cr_number}\n\nImmediate manual intervention required.",
+          "incident_impact": "high",
+          "incident_urgency": "high"
         }
       },
-      "position": { "x": 2400, "y": 600 }
+      "position": { "x": 3600, "y": 0 }
+    },
+    {
+      "id": "incident_keystore_fail",
+      "type": "aap_job_template",
+      "name": "Incident: Keystore Renewal Failed",
+      "parameters": {
+        "job_template_name": "Manage SNOW Incident",
+        "organization_name": "Default",
+        "extra_vars": {
+          "action": "create",
+          "short_description": "FAILED: Certificate renewal failed on ${trigger.host}:${trigger.port} (${trigger.service})",
+          "description": "Java keystore certificate renewal FAILED.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nCert Type: Java Keystore\nDays Remaining: ${trigger.days_remaining}\nChange Request: ${create_change_keystore.artifacts.cr_number}\n\nImmediate manual intervention required.",
+          "incident_impact": "high",
+          "incident_urgency": "high"
+        }
+      },
+      "position": { "x": 4800, "y": 450 }
+    },
+    {
+      "id": "rejection_handler",
+      "type": "aap_job_template",
+      "name": "Update CR: Rejected",
+      "parameters": {
+        "job_template_name": "Manage SNOW Change Request",
+        "organization_name": "Default",
+        "extra_vars": {
+          "action": "update",
+          "cr_sys_id": "${create_change_keystore.artifacts.cr_sys_id}",
+          "work_notes": "Change request rejected. Certificate on ${trigger.host}:${trigger.port} still has ${trigger.days_remaining} days remaining. Manual renewal required before expiry."
+        }
+      },
+      "position": { "x": 3600, "y": 900 }
     }
   ],
   "edges": [
-    { "from": "trigger_webhook", "to": "create_incident" },
-    { "from": "create_incident", "to": "ai_plan_renewal" },
-    { "from": "ai_plan_renewal", "to": "update_incident_analysis" },
-    { "from": "update_incident_analysis", "to": "create_change_request" },
-    { "from": "create_change_request", "to": "authorize_cr" },
-    { "from": "authorize_cr", "to": "approval_gate" },
-    { "from": "approval_gate", "to": "cert_type_switch", "from_port": "approved" },
+    { "from": "trigger_webhook", "to": "ai_assess" },
+    { "from": "ai_assess", "to": "cert_type_switch" },
+
+    { "from": "cert_type_switch", "to": "create_change_pem", "from_port": "case_pem" },
+    { "from": "create_change_pem", "to": "renew_pem" },
+    { "from": "renew_pem", "to": "validate_pem" },
+    { "from": "validate_pem", "to": "close_change_pem" },
+    { "from": "renew_pem", "to": "incident_pem_fail", "from_port": "on_failure" },
+    { "from": "validate_pem", "to": "incident_pem_fail", "from_port": "on_failure" },
+
+    { "from": "cert_type_switch", "to": "create_change_keystore", "from_port": "case_keystore" },
+    { "from": "create_change_keystore", "to": "authorize_keystore" },
+    { "from": "authorize_keystore", "to": "approval_gate" },
+    { "from": "approval_gate", "to": "renew_keystore", "from_port": "approved" },
     { "from": "approval_gate", "to": "rejection_handler", "from_port": "rejected" },
-    { "from": "cert_type_switch", "to": "renew_pem", "from_port": "case_pem" },
-    { "from": "cert_type_switch", "to": "renew_keystore", "from_port": "case_keystore" },
-    { "from": "renew_pem", "to": "validate_renewal" },
-    { "from": "renew_keystore", "to": "validate_renewal" },
-    { "from": "validate_renewal", "to": "resolve_incident" },
-    { "from": "validate_renewal", "to": "close_cr" }
+    { "from": "renew_keystore", "to": "validate_keystore" },
+    { "from": "validate_keystore", "to": "close_change_keystore" },
+    { "from": "renew_keystore", "to": "incident_keystore_fail", "from_port": "on_failure" },
+    { "from": "validate_keystore", "to": "incident_keystore_fail", "from_port": "on_failure" }
   ]
 }
