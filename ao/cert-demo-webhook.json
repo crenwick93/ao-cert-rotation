@@ -221,40 +221,6 @@
     },
 
     {
-      "id": "incident_pem_fail",
-      "type": "aap_job_template",
-      "name": "Incident: PEM Renewal Failed",
-      "parameters": {
-        "job_template_name": "Manage SNOW Incident",
-        "organization_name": "Default",
-        "extra_vars": {
-          "action": "create",
-          "short_description": "FAILED: Certificate renewal failed on ${trigger.host}:${trigger.port} (${trigger.service})",
-          "description": "Automated PEM certificate renewal FAILED.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nCert Type: PEM\nDays Remaining: ${trigger.days_remaining}\nChange Request: ${create_change_pem.artifacts.cr_number}\n\nImmediate manual intervention required.",
-          "incident_impact": "high",
-          "incident_urgency": "high"
-        }
-      },
-      "position": { "x": 3600, "y": 0 }
-    },
-    {
-      "id": "incident_keystore_fail",
-      "type": "aap_job_template",
-      "name": "Incident: Keystore Renewal Failed",
-      "parameters": {
-        "job_template_name": "Manage SNOW Incident",
-        "organization_name": "Default",
-        "extra_vars": {
-          "action": "create",
-          "short_description": "FAILED: Certificate renewal failed on ${trigger.host}:${trigger.port} (${trigger.service})",
-          "description": "Java keystore certificate renewal FAILED.\n\nHost: ${trigger.host}\nService: ${trigger.service}\nCert Type: Java Keystore\nDays Remaining: ${trigger.days_remaining}\nChange Request: ${create_change_keystore.artifacts.cr_number}\n\nImmediate manual intervention required.",
-          "incident_impact": "high",
-          "incident_urgency": "high"
-        }
-      },
-      "position": { "x": 4800, "y": 450 }
-    },
-    {
       "id": "rejection_handler",
       "type": "aap_job_template",
       "name": "Update CR: Rejected",
@@ -278,8 +244,6 @@
     { "from": "create_change_pem", "to": "renew_pem" },
     { "from": "renew_pem", "to": "validate_pem" },
     { "from": "validate_pem", "to": "close_change_pem" },
-    { "from": "renew_pem", "to": "incident_pem_fail", "from_port": "on_failure" },
-    { "from": "validate_pem", "to": "incident_pem_fail", "from_port": "on_failure" },
 
     { "from": "cert_type_switch", "to": "create_change_keystore", "from_port": "case_keystore" },
     { "from": "create_change_keystore", "to": "authorize_keystore" },
@@ -287,8 +251,6 @@
     { "from": "approval_gate", "to": "renew_keystore", "from_port": "approved" },
     { "from": "approval_gate", "to": "rejection_handler", "from_port": "rejected" },
     { "from": "renew_keystore", "to": "validate_keystore" },
-    { "from": "validate_keystore", "to": "close_change_keystore" },
-    { "from": "renew_keystore", "to": "incident_keystore_fail", "from_port": "on_failure" },
-    { "from": "validate_keystore", "to": "incident_keystore_fail", "from_port": "on_failure" }
+    { "from": "validate_keystore", "to": "close_change_keystore" }
   ]
 }
