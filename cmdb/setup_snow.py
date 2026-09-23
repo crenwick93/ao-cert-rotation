@@ -140,6 +140,119 @@ def create_assignment_groups() -> None:
         print(f"  CREATED {name}  sys_id={sys_id}")
 
 
+CHANGE_TEMPLATES = [
+    {
+        "name": "Certificate Renewal - PEM",
+        "description": f"{DEMO_TAG} Standard change template for PEM certificate renewal (nginx, Apache, HAProxy). Non-invasive: service reload, zero downtime.",
+        "attributes": {
+            "type": "standard",
+            "risk": "low",
+            "impact": "3",
+            "priority": "3",
+            "category": "Software",
+            "assignment_group": "Platform Services",
+            "approval": "approved",
+            "implementation_plan": (
+                "1. Request new PEM certificate from Vault CA.\n"
+                "2. Replace cert and key files on the target host.\n"
+                "3. Reload the web server (zero downtime — no restart).\n"
+                "4. Automated TLS validation verifies new cert is live."
+            ),
+            "backout_plan": (
+                "Restore certificate backup files (.bak) and reload the web server.\n"
+                "- Cert: /etc/pki/tls/certs/server.crt.bak\n"
+                "- Key: /etc/pki/tls/private/server.key.bak"
+            ),
+            "test_plan": (
+                "OpenSSL TLS handshake check verifying:\n"
+                "- Correct subject (CN matches domain)\n"
+                "- Correct issuer (Vault CA)\n"
+                "- Expiry > 7 days\n"
+                "- Service responding on expected port"
+            ),
+        },
+    },
+    {
+        "name": "Certificate Renewal - Java Keystore",
+        "description": f"{DEMO_TAG} Standard change template for Java keystore certificate renewal (Tomcat, JBoss, Kafka). Invasive: service restart required, brief downtime.",
+        "attributes": {
+            "type": "standard",
+            "risk": "medium",
+            "impact": "2",
+            "priority": "2",
+            "category": "Software",
+            "assignment_group": "Application Services",
+            "implementation_plan": (
+                "1. Request new certificate from Vault CA.\n"
+                "2. Convert PEM to PKCS12, import into Java keystore.\n"
+                "3. RESTART the application server (brief downtime expected).\n"
+                "4. Automated TLS validation verifies new cert is live.\n\n"
+                "NOTE: This change requires a service restart. Dependent services\n"
+                "will experience brief connectivity loss. Schedule during a\n"
+                "maintenance window if possible."
+            ),
+            "backout_plan": (
+                "Restore keystore backup and restart the application server.\n"
+                "- Keystore: /opt/tomcat/conf/keystore.jks.bak\n"
+                "- Restart: systemctl restart tomcat"
+            ),
+            "test_plan": (
+                "OpenSSL TLS handshake check verifying:\n"
+                "- Correct subject (CN matches domain)\n"
+                "- Correct issuer (Vault CA)\n"
+                "- Expiry > 7 days\n"
+                "- Service responding on expected port after restart"
+            ),
+        },
+    },
+]
+
+
+def create_change_templates() -> None:
+    """Create standard change templates in ServiceNow."""
+    print("\nStandard Change Templates:")
+    for tmpl in CHANGE_TEMPLATES:
+        query = f"short_description={tmpl['name']}"
+        existing = find_existing("std_change_producer_version", query)
+        if existing:
+            print(f"  EXISTS  {tmpl['name']}  sys_id={existing['sys_id']}")
+            continue
+
+        # First create the std_change_record_producer
+        producer_query = f"name={tmpl['name']}"
+        producer = find_existing("std_change_record_producer", producer_query)
+        if not producer:
+            producer_data = {
+                "name": tmpl["name"],
+                "description": tmpl["description"],
+                "short_description": tmpl["name"],
+            }
+            r = session.post(snow_url("/api/now/table/std_change_record_producer"), json=producer_data)
+            if r.status_code in (200, 201):
+                producer = r.json()["result"]
+                print(f"  CREATED producer {tmpl['name']}  sys_id={producer['sys_id']}")
+            else:
+                # Fall back to creating just the change template version
+                print(f"  SKIP    producer {tmpl['name']} (status {r.status_code} — may need manual creation)")
+                continue
+        else:
+            print(f"  EXISTS  producer {tmpl['name']}  sys_id={producer['sys_id']}")
+
+        # Create the template version with pre-populated fields
+        version_data = {
+            "std_change_producer": producer["sys_id"],
+            "short_description": tmpl["name"],
+            "description": tmpl["description"],
+            **{k: v for k, v in tmpl["attributes"].items()},
+        }
+        r = session.post(snow_url("/api/now/table/std_change_producer_version"), json=version_data)
+        if r.status_code in (200, 201):
+            sys_id = r.json()["result"]["sys_id"]
+            print(f"  CREATED template version {tmpl['name']}  sys_id={sys_id}")
+        else:
+            print(f"  SKIP    template version {tmpl['name']} (status {r.status_code})")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Set up cert rotation demo CMDB in ServiceNow")
     parser.add_argument(
@@ -213,6 +326,10 @@ def main() -> int:
     print(f"  {bs['name']} (business service)")
     for comp in defs["components"]:
         print(f"    ├── {comp['name']} ({comp['ci_class']})")
+
+    # --- Standard Change Templates ---
+    create_change_templates()
+
     print()
     return 0
 

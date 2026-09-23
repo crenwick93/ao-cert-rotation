@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Remove all cert rotation demo CIs and relationships from ServiceNow.
+"""Remove all cert rotation demo objects from ServiceNow.
 
+Removes CIs, relationships, assignment groups, and change templates.
 Identifies demo records by the [cert-demo] prefix in the description field.
 
 Usage:
